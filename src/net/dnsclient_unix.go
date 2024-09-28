@@ -626,7 +626,7 @@ func (r *Resolver) goLookupIPCNAMEOrder(ctx context.Context, network, name strin
 	}
 
 	lane := make(chan result, 1)
-	qtypes := []dnsmessage.Type{dnsmessage.TypeA, dnsmessage.TypeAAAA}
+	qtypes := []dnsmessage.Type{dnsmessage.TypeA}
 	if network == "CNAME" {
 		qtypes = append(qtypes, dnsmessage.TypeCNAME)
 	}

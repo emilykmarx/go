@@ -1,8 +1,12 @@
+//go:build !js
+
+/*
+ * Copied from go 1.20.1, modified to choose lookup order more similarly to go 1.13.15
+ */
+
 // Copyright 2015 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
-
-//go:build !js
 
 package net
 
@@ -228,6 +232,13 @@ func (c *conf) hostLookupOrder(r *Resolver, hostname string) (ret hostLookupOrde
 		if c.goos == "solaris" {
 			// illumos defaults to "nis [NOTFOUND=return] files"
 			return fallbackOrder, conf
+		}
+
+		// From go 1.13
+		if c.goos == "linux" {
+			// glibc says the default is "dns [!UNAVAIL=return] files"
+			// https://www.gnu.org/software/libc/manual/html_node/Notes-on-NSS-Configuration-File.html.
+			return hostLookupDNSFiles, conf
 		}
 
 		return hostLookupFilesDNS, conf
