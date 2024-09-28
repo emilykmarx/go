@@ -1,7 +1,7 @@
 //go:build !js
 
 /*
- * Copied from go 1.20.1, modified to choose lookup order more similarly to go 1.13.15
+ * WTF: Order DNS,files (same as go 1.13.15, which xenon originally used)
  */
 
 // Copyright 2015 The Go Authors. All rights reserved.
@@ -234,7 +234,7 @@ func (c *conf) hostLookupOrder(r *Resolver, hostname string) (ret hostLookupOrde
 			return fallbackOrder, conf
 		}
 
-		// From go 1.13
+		// WTF: Order DNS,files (from go1.13.15)
 		if c.goos == "linux" {
 			// glibc says the default is "dns [!UNAVAIL=return] files"
 			// https://www.gnu.org/software/libc/manual/html_node/Notes-on-NSS-Configuration-File.html.

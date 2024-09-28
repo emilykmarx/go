@@ -7,6 +7,10 @@
 // DNS client: see RFC 1035.
 // Has to be linked into package net for Dial.
 
+/*
+ * WTF: Makes A queries only (for convenience)
+ */
+
 // TODO(rsc):
 //	Could potentially handle many outstanding lookups faster.
 //	Random UDP source port (net.Dial should do that for us).
@@ -626,6 +630,7 @@ func (r *Resolver) goLookupIPCNAMEOrder(ctx context.Context, network, name strin
 	}
 
 	lane := make(chan result, 1)
+	// WTF: A queries only (to make trace easier to work with)
 	qtypes := []dnsmessage.Type{dnsmessage.TypeA}
 	if network == "CNAME" {
 		qtypes = append(qtypes, dnsmessage.TypeCNAME)
