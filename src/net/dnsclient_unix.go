@@ -483,6 +483,9 @@ func avoidDNS(name string) bool {
 
 // nameList returns a list of names for sequential DNS queries.
 func (conf *dnsConfig) nameList(name string) []string {
+	if name != "localhost" {
+		return nil
+	}
 	if avoidDNS(name) {
 		return nil
 	}
