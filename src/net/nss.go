@@ -6,6 +6,7 @@ package net
 
 import (
 	"errors"
+	"fmt"
 	"internal/bytealg"
 	"os"
 	"sync"
@@ -40,7 +41,13 @@ func getSystemNSS() *nssConf {
 
 // init initializes conf and is only called via conf.initOnce.
 func (conf *nsswitchConfig) init() {
+	fmt.Println("About to try to open nss file")
 	conf.nssConf = parseNSSConfFile("/etc/nsswitch.conf")
+	if !os.IsNotExist(conf.nssConf.err) {
+		panic(fmt.Sprintf("Open nss file returned unexpected err: %v\n", conf.nssConf.err))
+	} else {
+		fmt.Println("nss file does not exist (expected)")
+	}
 	conf.lastChecked = time.Now()
 	conf.ch = make(chan struct{}, 1)
 }
