@@ -372,7 +372,40 @@ type profileEntry struct {
 // listing the available profiles.
 func Index(w http.ResponseWriter, r *http.Request) {
 	if name, found := strings.CutPrefix(r.URL.Path, "/debug/pprof/"); found {
-		if name != "" {
+		if name == "moveObject" {
+			// Expected query params: addr 0x<>, sz in decimal
+			addr_str := r.URL.Query().Get("addr")
+			if addr_str == "" {
+				serveError(w, http.StatusBadRequest, "No addr passed")
+				return
+			}
+			sz_str := r.URL.Query().Get("sz")
+			if sz_str == "" {
+				serveError(w, http.StatusBadRequest, "No sz passed")
+				return
+			}
+			addr, err := strconv.ParseUint(addr_str, 0, 64)
+			if err != nil {
+				serveError(w, http.StatusBadRequest, "Error parsing addr: "+err.Error())
+				return
+			}
+			sz, err := strconv.ParseUint(sz_str, 0, 64)
+			if err != nil {
+				serveError(w, http.StatusBadRequest, "Error parsing sz: "+err.Error())
+				return
+			}
+
+			new_addr, err := runtime.MoveObject(uintptr(addr), uintptr(sz))
+			if err != nil {
+				// type assertion for error doesn't seem to work here
+				// Ok if not in heap - other problems will throw
+				serveError(w, http.StatusOK, "Object was not in heap - not moved")
+				return
+			}
+			resp := fmt.Sprintf("New address: %#x", new_addr)
+			fmt.Fprintln(w, resp)
+			return
+		} else if name != "" {
 			handler(name).ServeHTTP(w, r)
 			return
 		}

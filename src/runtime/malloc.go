@@ -350,6 +350,29 @@ var (
 	physHugePageShift uint
 )
 
+type NotInHeap struct{}
+
+func (e NotInHeap) Error() string {
+	return "object not in heap"
+}
+
+// TODO:
+// Move to tainted page
+// Handle objects with pointers (or at least assert no pointers in object - else will get scary bugs)
+// Update any pointers to object
+func MoveObject(addr uintptr, sz uintptr) (uintptr, error) {
+	print("MoveObject, addr ", addr, ", sz ", sz, "\n")
+	// Check if object is on heap (doesn't work in malloc_test - will need to skip check if use that)
+	if base, _, _ := findObject(addr, 0, 0); base == 0 {
+		return 0, NotInHeap{}
+	}
+	// PERF for some types, can likely get away with less zeroing (see append())
+	old := unsafe.Pointer(addr)
+	new := mallocgc(sz, nil, true)
+	memmove(new, old, sz)
+	return uintptr(new), nil
+}
+
 func mallocinit() {
 	if class_to_size[_TinySizeClass] != _TinySize {
 		throw("bad TinySizeClass")
@@ -1002,7 +1025,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 				off = alignUp(off, 2)
 			}
 			if off+size <= maxTinySize && c.tiny != 0 {
-				// The object fits into existing tiny block.
+				// Tiny alloc case 1: The object fits into existing tiny block.
 				x = unsafe.Pointer(c.tiny + off)
 				c.tinyoffset = off + size
 				c.tinyAllocs++
@@ -1010,7 +1033,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 				releasem(mp)
 				return x
 			}
-			// Allocate a new maxTinySize block.
+			// Tiny alloc case 2: Allocate a new maxTinySize block.
 			span = c.alloc[tinySpanClass]
 			v := nextFreeFast(span)
 			if v == 0 {
@@ -1027,7 +1050,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 				c.tinyoffset = size
 			}
 			size = maxTinySize
-		} else {
+		} else { // <= 32KB, but not tiny
 			var sizeclass uint8
 			if size <= smallSizeMax-8 {
 				sizeclass = size_to_class8[divRoundUp(size, smallSizeDiv)]
@@ -1036,6 +1059,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 			}
 			size = uintptr(class_to_size[sizeclass])
 			spc := makeSpanClass(sizeclass, noscan)
+			// Normal alloc case
 			span = c.alloc[spc]
 			v := nextFreeFast(span)
 			if v == 0 {
@@ -1046,10 +1070,11 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 				memclrNoHeapPointers(x, size)
 			}
 		}
-	} else {
+	} else { // >32KB
 		shouldhelpgc = true
 		// For large allocations, keep track of zeroed state so that
 		// bulk zeroing can be happen later in a preemptible context.
+		// Large alloc case
 		span = c.allocLarge(size, noscan)
 		span.freeindex = 1
 		span.allocCount = 1
