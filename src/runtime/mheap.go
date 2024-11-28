@@ -555,29 +555,31 @@ func recordspan(vh unsafe.Pointer, p unsafe.Pointer) {
 	h.allspans[len(h.allspans)-1] = s
 }
 
-// A spanClass represents the size class and noscan-ness of a span.
+// A spanClass represents the size class, noscan-ness, and taintedness of a span.
 //
-// Each size class has a noscan spanClass and a scan spanClass. The
-// noscan spanClass contains only noscan objects, which do not contain
+// A noscan spanClass contains only noscan objects, which do not contain
 // pointers and thus do not need to be scanned by the garbage
 // collector.
+// A tainted spanClass contains only tainted objects, i.e. those moved by MoveObject().
 type spanClass uint8
 
 const (
-	numSpanClasses = _NumSizeClasses << 1
-	tinySpanClass  = spanClass(tinySizeClass<<1 | 1)
+	numSpanClasses         = _NumSizeClasses << 2
+	tinyTaintedSpanClass   = spanClass(tinySizeClass<<2 | 1<<1 | 1)
+	tinyUntaintedSpanClass = spanClass(tinySizeClass<<2 | 1<<1)
 )
 
-func makeSpanClass(sizeclass uint8, noscan bool) spanClass {
-	return spanClass(sizeclass<<1) | spanClass(bool2int(noscan))
+// spanClass format: upper 6 bits sizeclass, 2nd-lowest bit noscan, lowest bit tainted
+func makeSpanClass(sizeclass uint8, noscan bool, tainted bool) spanClass {
+	return spanClass(sizeclass<<2) | spanClass(bool2int(noscan))<<1 | spanClass(bool2int(tainted))
 }
 
 func (sc spanClass) sizeclass() int8 {
-	return int8(sc >> 1)
+	return int8(sc >> 2)
 }
 
 func (sc spanClass) noscan() bool {
-	return sc&1 != 0
+	return sc&(1<<1) != 0
 }
 
 // arenaIndex returns the index into mheap_.arenas of the arena

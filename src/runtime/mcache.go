@@ -36,9 +36,11 @@ type mcache struct {
 	//
 	// tinyAllocs is the number of tiny allocations performed
 	// by the P that owns this mcache.
-	tiny       uintptr
-	tinyoffset uintptr
-	tinyAllocs uintptr
+	tinyTainted         uintptr
+	tinyTaintedOffset   uintptr
+	tinyUntainted       uintptr
+	tinyUntaintedOffset uintptr
+	tinyAllocs          uintptr
 
 	// The rest is not accessed on every malloc.
 
@@ -164,7 +166,7 @@ func (c *mcache) refill(spc spanClass) {
 		atomic.Xadd64(&stats.smallAllocCount[spc.sizeclass()], slotsUsed)
 
 		// Flush tinyAllocs.
-		if spc == tinySpanClass {
+		if spc == tinyUntaintedSpanClass || spc == tinyTaintedSpanClass {
 			atomic.Xadd64(&stats.tinyAllocCount, int64(c.tinyAllocs))
 			c.tinyAllocs = 0
 		}
@@ -216,7 +218,7 @@ func (c *mcache) refill(spc spanClass) {
 }
 
 // allocLarge allocates a span for a large object.
-func (c *mcache) allocLarge(size uintptr, noscan bool) *mspan {
+func (c *mcache) allocLarge(size uintptr, noscan bool, tainted bool) *mspan {
 	if size+_PageSize < size {
 		throw("out of memory")
 	}
@@ -230,7 +232,7 @@ func (c *mcache) allocLarge(size uintptr, noscan bool) *mspan {
 	// pays the debt down to npage pages.
 	deductSweepCredit(npages*_PageSize, npages)
 
-	spc := makeSpanClass(0, noscan)
+	spc := makeSpanClass(0, noscan, tainted)
 	s := mheap_.alloc(npages, spc)
 	if s == nil {
 		throw("out of memory")
@@ -293,8 +295,10 @@ func (c *mcache) releaseAll() {
 		}
 	}
 	// Clear tinyalloc pool.
-	c.tiny = 0
-	c.tinyoffset = 0
+	c.tinyUntainted = 0
+	c.tinyUntaintedOffset = 0
+	c.tinyTainted = 0
+	c.tinyTaintedOffset = 0
 
 	// Flush tinyAllocs.
 	stats := memstats.heapStats.acquire()

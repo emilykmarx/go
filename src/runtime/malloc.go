@@ -366,9 +366,9 @@ func MoveObject(addr uintptr, sz uintptr) (uintptr, error) {
 	if base, _, _ := findObject(addr, 0, 0); base == 0 {
 		return 0, NotInHeap{}
 	}
-	// PERF for some types, can likely get away with less zeroing (see append())
+	// PERF for some types, can likely get away with less zeroing and memmoving (see append())
 	old := unsafe.Pointer(addr)
-	new := mallocgc(sz, nil, true)
+	new := mallocgcTainted(sz, nil, true)
 	memmove(new, old, sz)
 	return uintptr(new), nil
 }
@@ -895,10 +895,19 @@ func (c *mcache) nextFree(spc spanClass) (v gclinkptr, s *mspan, shouldhelpgc bo
 	return
 }
 
+func mallocgcTainted(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+	return mallocgcInternal(size, typ, needzero, true)
+}
+
+// for untainted object
+func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+	return mallocgcInternal(size, typ, needzero, false)
+}
+
 // Allocate an object of size bytes.
 // Small objects are allocated from the per-P cache's free lists.
 // Large objects (> 32 kB) are allocated straight from the heap.
-func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+func mallocgcInternal(size uintptr, typ *_type, needzero bool, tainted bool) unsafe.Pointer {
 	if gcphase == _GCmarktermination {
 		throw("mallocgc called with gcphase == _GCmarktermination")
 	}
@@ -1007,7 +1016,12 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 			// standalone escaping variables. On a json benchmark
 			// the allocator reduces number of allocations by ~12% and
 			// reduces heap size by ~20%.
-			off := c.tinyoffset
+			off := c.tinyUntaintedOffset
+			tiny := c.tinyUntainted
+			if tainted {
+				off = c.tinyTaintedOffset
+				tiny = c.tinyTainted
+			}
 			// Align tiny pointer for required (conservative) alignment.
 			if size&7 == 0 {
 				off = alignUp(off, 8)
@@ -1024,16 +1038,24 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 			} else if size&1 == 0 {
 				off = alignUp(off, 2)
 			}
-			if off+size <= maxTinySize && c.tiny != 0 {
+			if off+size <= maxTinySize && tiny != 0 {
 				// Tiny alloc case 1: The object fits into existing tiny block.
-				x = unsafe.Pointer(c.tiny + off)
-				c.tinyoffset = off + size
+				x = unsafe.Pointer(tiny + off)
+				if tainted {
+					c.tinyTainted = off + size
+				} else {
+					c.tinyUntainted = off + size
+				}
 				c.tinyAllocs++
 				mp.mallocing = 0
 				releasem(mp)
 				return x
 			}
 			// Tiny alloc case 2: Allocate a new maxTinySize block.
+			tinySpanClass := tinyUntaintedSpanClass
+			if tainted {
+				tinySpanClass = tinyTaintedSpanClass
+			}
 			span = c.alloc[tinySpanClass]
 			v := nextFreeFast(span)
 			if v == 0 {
@@ -1044,10 +1066,16 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 			(*[2]uint64)(x)[1] = 0
 			// See if we need to replace the existing tiny block with the new one
 			// based on amount of remaining free space.
-			if !raceenabled && (size < c.tinyoffset || c.tiny == 0) {
+			if tainted {
+				if !raceenabled && (size < c.tinyTaintedOffset || c.tinyTainted == 0) {
+					// Note: disabled when race detector is on, see comment near end of this function.
+					c.tinyTainted = uintptr(x)
+					c.tinyTaintedOffset = size
+				}
+			} else if !raceenabled && (size < c.tinyUntaintedOffset || c.tinyUntainted == 0) {
 				// Note: disabled when race detector is on, see comment near end of this function.
-				c.tiny = uintptr(x)
-				c.tinyoffset = size
+				c.tinyUntainted = uintptr(x)
+				c.tinyUntaintedOffset = size
 			}
 			size = maxTinySize
 		} else { // <= 32KB, but not tiny
@@ -1058,7 +1086,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 				sizeclass = size_to_class128[divRoundUp(size-smallSizeMax, largeSizeDiv)]
 			}
 			size = uintptr(class_to_size[sizeclass])
-			spc := makeSpanClass(sizeclass, noscan)
+			spc := makeSpanClass(sizeclass, noscan, tainted)
 			// Normal alloc case
 			span = c.alloc[spc]
 			v := nextFreeFast(span)
@@ -1075,7 +1103,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		// For large allocations, keep track of zeroed state so that
 		// bulk zeroing can be happen later in a preemptible context.
 		// Large alloc case
-		span = c.allocLarge(size, noscan)
+		span = c.allocLarge(size, noscan, tainted)
 		span.freeindex = 1
 		span.allocCount = 1
 		size = span.elemsize
