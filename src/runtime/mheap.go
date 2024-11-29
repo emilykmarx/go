@@ -561,7 +561,7 @@ func recordspan(vh unsafe.Pointer, p unsafe.Pointer) {
 // pointers and thus do not need to be scanned by the garbage
 // collector.
 // A tainted spanClass contains only tainted objects, i.e. those moved by MoveObject().
-type spanClass uint8
+type spanClass uint16
 
 const (
 	numSpanClasses         = _NumSizeClasses << 2
@@ -569,7 +569,7 @@ const (
 	tinyUntaintedSpanClass = spanClass(tinySizeClass<<2 | 1<<1)
 )
 
-// spanClass format: upper 6 bits sizeclass, 2nd-lowest bit noscan, lowest bit tainted
+// spanClass format: upper bits sizeclass, 2nd-lowest bit noscan, lowest bit tainted
 func makeSpanClass(sizeclass uint8, noscan bool, tainted bool) spanClass {
 	return spanClass(sizeclass<<2) | spanClass(bool2int(noscan))<<1 | spanClass(bool2int(tainted))
 }

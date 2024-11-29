@@ -357,7 +357,6 @@ func (e NotInHeap) Error() string {
 }
 
 // TODO:
-// Move to tainted page
 // Handle objects with pointers (or at least assert no pointers in object - else will get scary bugs)
 // Update any pointers to object
 func MoveObject(addr uintptr, sz uintptr) (uintptr, error) {
@@ -1042,9 +1041,9 @@ func mallocgcInternal(size uintptr, typ *_type, needzero bool, tainted bool) uns
 				// Tiny alloc case 1: The object fits into existing tiny block.
 				x = unsafe.Pointer(tiny + off)
 				if tainted {
-					c.tinyTainted = off + size
+					c.tinyTaintedOffset = off + size
 				} else {
-					c.tinyUntainted = off + size
+					c.tinyUntaintedOffset = off + size
 				}
 				c.tinyAllocs++
 				mp.mallocing = 0
