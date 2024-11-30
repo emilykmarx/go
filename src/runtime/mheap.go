@@ -566,12 +566,13 @@ type spanClass uint16
 const (
 	numSpanClasses         = _NumSizeClasses << 2
 	tinyTaintedSpanClass   = spanClass(tinySizeClass<<2 | 1<<1 | 1)
-	tinyUntaintedSpanClass = spanClass(tinySizeClass<<2 | 1<<1)
+	tinyUntaintedSpanClass = spanClass(tinySizeClass<<2 | 1)
 )
 
-// spanClass format: upper bits sizeclass, 2nd-lowest bit noscan, lowest bit tainted
+// spanClass format: upper bits sizeclass, 2nd-lowest bit tainted, lowest bit noscan
 func makeSpanClass(sizeclass uint8, noscan bool, tainted bool) spanClass {
-	return spanClass(sizeclass<<2) | spanClass(bool2int(noscan))<<1 | spanClass(bool2int(tainted))
+	sizeclass_ := uint16(sizeclass) // prevent truncating upper bits of size
+	return spanClass(sizeclass_<<2) | spanClass(bool2int(tainted))<<1 | spanClass(bool2int(noscan))
 }
 
 func (sc spanClass) sizeclass() int8 {
@@ -579,7 +580,7 @@ func (sc spanClass) sizeclass() int8 {
 }
 
 func (sc spanClass) noscan() bool {
-	return sc&(1<<1) != 0
+	return sc&1 != 0
 }
 
 // arenaIndex returns the index into mheap_.arenas of the arena
