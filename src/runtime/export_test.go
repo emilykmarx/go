@@ -69,6 +69,9 @@ func LFStackPush(head *uint64, node *LFNode) {
 func LFStackPop(head *uint64) *LFNode {
 	return (*LFNode)(unsafe.Pointer((*lfstack)(head).pop()))
 }
+func LFStackHead(head *uint64) *LFNode {
+	return (*LFNode)(unsafe.Pointer((*lfstack)(head).head()))
+}
 func LFNodeValidate(node *LFNode) {
 	lfnodeValidate((*lfnode)(unsafe.Pointer(node)))
 }

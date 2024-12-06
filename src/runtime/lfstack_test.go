@@ -42,7 +42,7 @@ func TestLFStack(t *testing.T) {
 	global = stack // force heap allocation
 
 	// Check the stack is initially empty.
-	if LFStackPop(stack) != nil {
+	if LFStackPop(stack) != nil || LFStackHead(stack) != nil {
 		t.Fatalf("stack is not empty")
 	}
 
@@ -54,12 +54,30 @@ func TestLFStack(t *testing.T) {
 	node = allocMyNode(43)
 	LFStackPush(stack, fromMyNode(node))
 
+	// Get head.
+	node = toMyNode(LFStackHead(stack))
+	if node == nil {
+		t.Fatalf("stack is empty")
+	}
+	if node.data != 43 {
+		t.Fatalf("no lifo")
+	}
+
 	// Pop one element.
 	node = toMyNode(LFStackPop(stack))
 	if node == nil {
 		t.Fatalf("stack is empty")
 	}
 	if node.data != 43 {
+		t.Fatalf("no lifo")
+	}
+
+	// Get head again.
+	node = toMyNode(LFStackHead(stack))
+	if node == nil {
+		t.Fatalf("stack is empty")
+	}
+	if node.data != 42 {
 		t.Fatalf("no lifo")
 	}
 
@@ -73,7 +91,7 @@ func TestLFStack(t *testing.T) {
 	}
 
 	// Check the stack is empty again.
-	if LFStackPop(stack) != nil {
+	if LFStackPop(stack) != nil || LFStackHead(stack) != nil {
 		t.Fatalf("stack is not empty")
 	}
 	if *stack != 0 {
