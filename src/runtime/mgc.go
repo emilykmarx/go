@@ -405,10 +405,15 @@ type workType struct {
 	cpuStats
 }
 
+func GC() {
+	GCInternal(0, 0)
+}
+
 // GC runs a garbage collection and blocks the caller until the
 // garbage collection is complete. It may also block the entire
 // program.
-func GC() {
+// If addrs are passed, update any pointers to the moved object
+func GCInternal(new_addr uintptr, old_addr uintptr) bool {
 	// We consider a cycle to be: sweep termination, mark, mark
 	// termination, and sweep. This function shouldn't return
 	// until a full cycle has been completed, from beginning to
@@ -441,7 +446,10 @@ func GC() {
 	// We're now in sweep N or later. Trigger GC cycle N+1, which
 	// will first finish sweep N if necessary and then enter sweep
 	// termination N+1.
-	gcStart(gcTrigger{kind: gcTriggerCycle, n: n + 1})
+	trigger := gcTrigger{kind: gcTriggerCycle, n: n + 1}
+	trigger.new_addr = new_addr
+	trigger.old_addr = old_addr
+	started := gcStart(trigger)
 
 	// Wait for mark termination N+1 to complete.
 	gcWaitOnMark(n + 1)
@@ -479,6 +487,7 @@ func GC() {
 		mProf_PostSweep()
 	}
 	releasem(mp)
+	return started
 }
 
 // gcWaitOnMark blocks until GC finishes the Nth mark phase. If GC has
@@ -520,6 +529,9 @@ type gcTrigger struct {
 	kind gcTriggerKind
 	now  int64  // gcTriggerTime: current time
 	n    uint32 // gcTriggerCycle: cycle number to start
+	// if called from MoveObject to update pointers, the old and new addr
+	new_addr uintptr
+	old_addr uintptr
 }
 
 type gcTriggerKind int
@@ -575,15 +587,27 @@ func (t gcTrigger) test() bool {
 //
 // This may return without performing this transition in some cases,
 // such as when called on a system stack or with locks held.
-func gcStart(trigger gcTrigger) {
+func gcStart(trigger gcTrigger) bool {
 	// Since this is called from malloc and malloc is called in
 	// the guts of a number of libraries that might be holding
 	// locks, don't attempt to start GC in non-preemptible or
 	// potentially unstable situations.
+	println("gcStart")
 	mp := acquirem()
 	if gp := getg(); gp == mp.g0 || mp.locks > 1 || mp.preemptoff != "" {
+		println("return early from gcStart\n")
+		if gp := getg(); gp == mp.g0 {
+			println("g0\n")
+		}
+		if mp.locks > 1 {
+			println("locks\n")
+		}
+		if mp.preemptoff != "" {
+			println("preemptoff: ", mp.preemptoff, "\n")
+		}
+
 		releasem(mp)
-		return
+		return false
 	}
 	releasem(mp)
 	mp = nil
@@ -607,8 +631,9 @@ func gcStart(trigger gcTrigger) {
 	semacquire(&work.startSema)
 	// Re-check transition condition under transition lock.
 	if !trigger.test() {
+		println("return early from gcStart; !trigger.test()")
 		semrelease(&work.startSema)
-		return
+		return false
 	}
 
 	// In gcstoptheworld debug mode, upgrade the mode accordingly.
@@ -640,6 +665,8 @@ func gcStart(trigger gcTrigger) {
 			println("runtime: p", p.id, "flushGen", fg, "!= sweepgen", mheap_.sweepgen)
 			throw("p mcache not flushed")
 		}
+		p.gcw.old_addr = trigger.old_addr
+		p.gcw.new_addr = trigger.new_addr
 	}
 
 	gcBgMarkStartWorkers()
@@ -662,6 +689,8 @@ func gcStart(trigger gcTrigger) {
 	if trace.enabled {
 		traceGCSTWStart(1)
 	}
+
+	// STW #1
 	systemstack(stopTheWorldWithSema)
 	// Finish sweep before we start concurrent scan.
 	systemstack(func() {
@@ -727,6 +756,7 @@ func gcStart(trigger gcTrigger) {
 
 	// Concurrent mark.
 	systemstack(func() {
+		// Start the world
 		now = startTheWorldWithSema(trace.enabled)
 		work.pauseNS += now - work.pauseStart
 		work.tMark = now
@@ -750,6 +780,7 @@ func gcStart(trigger gcTrigger) {
 	}
 
 	semrelease(&work.startSema)
+	return true
 }
 
 // gcMarkDoneFlushed counts the number of P's with flushed work.
@@ -852,6 +883,7 @@ top:
 	if trace.enabled {
 		traceGCSTWStart(0)
 	}
+	// STW #2
 	systemstack(stopTheWorldWithSema)
 	// The gcphase is _GCmark, it will transition to _GCmarktermination
 	// below. The important thing is that the wb remains active until
@@ -885,6 +917,14 @@ top:
 		})
 		semrelease(&worldsema)
 		goto top
+	}
+
+	// Mark has found all pointers to moved object. Update them before we start the world.
+	for _, p := range allp {
+		p.gcw.updateOldPtrs()
+		p.gcw.old_addr = 0
+		p.gcw.new_addr = 0
+		// gcw.old_ptrs will be freed with workbufs during sweep, since they share a memory pool.
 	}
 
 	gcComputeStartingStackSize()

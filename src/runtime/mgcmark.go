@@ -1236,6 +1236,12 @@ func scanblock(b0, n0 uintptr, ptrmask *uint8, gcw *gcWork, stk *stackScanState)
 				if p != 0 {
 					if obj, span, objIndex := findObject(p, b, i); obj != 0 {
 						greyobject(obj, b, i, span, gcw, objIndex)
+
+						// If target is a moved object, record pointer's addr so can update its value later
+						if obj == gcw.old_addr {
+							println("putOldPtr from scanblock: addr of ptr", hex(b+i))
+							gcw.putOldPtr(b + i)
+						}
 					} else if stk != nil && p >= stk.stack.lo && p < stk.stack.hi {
 						stk.putPtr(p, false)
 					}
@@ -1303,6 +1309,7 @@ func scanobject(b uintptr, gcw *gcWork) {
 
 	hbits := heapBitsForAddr(b, n)
 	var scanSize uintptr
+	// For each ptr in b (i.e. obj)
 	for {
 		var addr uintptr
 		if hbits, addr = hbits.nextFast(); addr == 0 {
@@ -1334,6 +1341,12 @@ func scanobject(b uintptr, gcw *gcWork) {
 			// allocation itself.
 			if obj, span, objIndex := findObject(obj, b, addr-b); obj != 0 {
 				greyobject(obj, b, addr-b, span, gcw, objIndex)
+
+				// If target is a moved object, record pointer's addr so can update its value later
+				if obj == gcw.old_addr {
+					println("putOldPtr from scanobject: addr of ptr", hex(addr))
+					gcw.putOldPtr(addr)
+				}
 			}
 		}
 	}
@@ -1433,6 +1446,12 @@ func scanConservative(b, n uintptr, ptrmask *uint8, gcw *gcWork, state *stackSca
 		// val points to an allocated object. Mark it.
 		obj := span.base() + idx*span.elemsize
 		greyobject(obj, b, i, span, gcw, idx)
+
+		// If target is a moved object, record pointer's addr so can update its value later
+		if obj == gcw.old_addr {
+			println("putOldPtr from scanConservative: addr of ptr", hex(b+i))
+			gcw.putOldPtr(b + i)
+		}
 	}
 }
 
@@ -1507,7 +1526,7 @@ func greyobject(obj, base, off uintptr, span *mspan, gcw *gcWork, objIndex uintp
 	}
 }
 
-// gcDumpObject dumps the contents of obj for debugging and marks the
+// gcDumpObject dumps the contents of obj for debugging, printing <== for the
 // field at byte offset off in obj.
 func gcDumpObject(label string, obj, off uintptr) {
 	s := spanOf(obj)

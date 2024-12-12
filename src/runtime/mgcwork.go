@@ -88,6 +88,12 @@ type gcWork struct {
 	// termination check. Specifically, this indicates that this
 	// gcWork may have communicated work to another gcWork.
 	flushedWork bool
+
+	// Only used if called from MoveObject
+	old_addr uintptr
+	new_addr uintptr
+	// Pointers to pointers to the old addr
+	old_ptrs lfstack
 }
 
 // Most of the methods of gcWork are go:nowritebarrierrec because the
@@ -114,7 +120,7 @@ func (w *gcWork) put(obj uintptr) {
 	flushed := false
 	wbuf := w.wbuf1
 	// Record that this may acquire the wbufSpans or heap lock to
-	// allocate a workbuf.
+	// allocate a workbuf (redundant, since getempty() already does).
 	lockWithRankMayAcquire(&work.wbufSpans.lock, lockRankWbufSpans)
 	lockWithRankMayAcquire(&mheap_.lock, lockRankMheap)
 	if wbuf == nil {
@@ -486,4 +492,51 @@ func freeSomeWbufs(preemptible bool) bool {
 	more := !work.wbufSpans.free.isEmpty()
 	unlock(&work.wbufSpans.lock)
 	return more
+}
+
+// Functions for the gcw's list of pointers to be updated (old_ptrs),
+// which is an lfstack of workbufs allocated/freed in the same way as wbuf1 and wbuf2,
+// but is simpler since we don't need to push full buffers to a global list.
+
+// Push an empty workbuf to old_ptrs.
+func (w *gcWork) pushOldPtrsWorkbuf() {
+	// Get a workbuf (from work.empty, work.wbufSpans.busy, or heap).
+	wbuf := getempty()
+	// Put workbuf on old_ptrs list.
+	wbuf.nobj = 0
+	lfnodeValidate(&wbuf.node)
+	w.old_ptrs.push(&wbuf.node)
+}
+
+// Record address of a pointer to be updated.
+// Not sure if nowritebarrierrec is necessary, but using it for consistency with (*gcWork) put()
+// since they are called from similar places.
+// PERF/TODO(minor): old_ptrs doesn't need to be lock-free - would be better to share code with (s *stackScanState) putPtr
+//
+//go:nowritebarrierrec
+func (w *gcWork) putOldPtr(obj uintptr) {
+	wbuf := (*workbuf)(w.old_ptrs.head())
+
+	// Record that this may acquire the wbufSpans or heap lock to
+	// allocate a workbuf.
+	lockWithRankMayAcquire(&work.wbufSpans.lock, lockRankWbufSpans)
+	lockWithRankMayAcquire(&mheap_.lock, lockRankMheap)
+	if wbuf == nil || wbuf.nobj == len(wbuf.obj) {
+		w.pushOldPtrsWorkbuf()
+		wbuf = (*workbuf)(w.old_ptrs.head())
+	}
+	// wbuf now has space for obj
+	wbuf.obj[wbuf.nobj] = obj
+	wbuf.nobj++
+}
+
+// Not sure if nowritebarrierrec is necessary
+func (w *gcWork) updateOldPtrs() {
+	for wbuf := (*workbuf)(w.old_ptrs.pop()); wbuf != nil; wbuf = (*workbuf)(w.old_ptrs.pop()) {
+		for i := 0; i < wbuf.nobj; i++ {
+			addr := (*uintptr)(unsafe.Pointer(wbuf.obj[i])) // pointer to pointer to old object
+			println("updated ptr from", hex(*addr), "to", hex(w.new_addr))
+			*addr = w.new_addr
+		}
+	}
 }

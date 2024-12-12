@@ -477,7 +477,7 @@ type mspan struct {
 	sweepgen              uint32
 	divMul                uint32        // for divide by elemsize
 	allocCount            uint16        // number of allocated objects
-	spanclass             spanClass     // size class and noscan (uint8)
+	spanclass             spanClass     // size class, taintedness, and noscan (uint8)
 	state                 mSpanStateBox // mSpanInUse etc; accessed atomically (get/set methods)
 	needzero              uint8         // needs to be zeroed before allocation
 	isUserArenaChunk      bool          // whether or not this span represents a user arena
