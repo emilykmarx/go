@@ -876,9 +876,7 @@ func copystack(gp *g, newsize uintptr) {
 	if stackPoisonCopy != 0 {
 		fillstack(new, 0xfd)
 	}
-	if stackDebug >= 1 {
-		print("copystack gp=", gp, " [", hex(old.lo), " ", hex(old.hi-used), " ", hex(old.hi), "]", " -> [", hex(new.lo), " ", hex(new.hi-used), " ", hex(new.hi), "]/", newsize, "\n")
-	}
+	print("copystack gp=", gp, " [", hex(old.lo), " ", hex(old.hi-used), " ", hex(old.hi), "]", " -> [", hex(new.lo), " ", hex(new.hi-used), " ", hex(new.hi), "]/", newsize, "\n")
 
 	// Compute adjustment.
 	var adjinfo adjustinfo

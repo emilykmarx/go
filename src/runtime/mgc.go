@@ -406,14 +406,14 @@ type workType struct {
 }
 
 func GC() {
-	GCInternal(0, 0)
+	GCInternal(0, 0, 0)
 }
 
 // GC runs a garbage collection and blocks the caller until the
 // garbage collection is complete. It may also block the entire
 // program.
 // If addrs are passed, update any pointers to the moved object
-func GCInternal(new_addr uintptr, old_addr uintptr) bool {
+func GCInternal(new_addr uintptr, old_addr uintptr, addr_addr uintptr) bool {
 	// We consider a cycle to be: sweep termination, mark, mark
 	// termination, and sweep. This function shouldn't return
 	// until a full cycle has been completed, from beginning to
@@ -449,6 +449,7 @@ func GCInternal(new_addr uintptr, old_addr uintptr) bool {
 	trigger := gcTrigger{kind: gcTriggerCycle, n: n + 1}
 	trigger.new_addr = new_addr
 	trigger.old_addr = old_addr
+	trigger.addr_addr = addr_addr
 	started := gcStart(trigger)
 
 	// Wait for mark termination N+1 to complete.
@@ -530,8 +531,9 @@ type gcTrigger struct {
 	now  int64  // gcTriggerTime: current time
 	n    uint32 // gcTriggerCycle: cycle number to start
 	// if called from MoveObject to update pointers, the old and new addr
-	new_addr uintptr
-	old_addr uintptr
+	new_addr  uintptr
+	old_addr  uintptr
+	addr_addr uintptr
 }
 
 type gcTriggerKind int
@@ -667,6 +669,7 @@ func gcStart(trigger gcTrigger) bool {
 		}
 		p.gcw.old_addr = trigger.old_addr
 		p.gcw.new_addr = trigger.new_addr
+		p.gcw.addr_addr = trigger.addr_addr
 	}
 
 	gcBgMarkStartWorkers()

@@ -358,19 +358,23 @@ func (e NotInHeap) Error() string {
 
 // TODO:
 // - Handle objects with pointers (or at least assert no pointers in object - else will get scary bugs)
+// - Handle copystack during MoveObject that moves pointers we've already recorded
 // - Handle or document data race for edge cases:
 // - 1. During GCInternal, thread writes a pointer to object after that pointer is scanned
 // (fix by also updating pointers added to write barrier, or abort move by checking if any added)
 // - 2. Thread accesses the moved object during GCInternal (fix by stopping threads if can do so safely)
 // - 3. scanConservative treates scalar as pointer
 // (can't fix without significant changes to go - maybe abort move if scanConservative does any greying? Unsure if common)
-func MoveObject(addr uintptr, sz uintptr) (uintptr, error) {
+func MoveObject(addr uintptr, sz uintptr, addr_addr uintptr) (uintptr, error) {
 	print("MoveObject, addr ", hex(addr), ", sz ", sz, "\n")
 	// Check if object is on heap
 	obj, _, _ := findObject(addr, 0, 0)
 	if obj == 0 {
 		return addr, NotInHeap{}
 	}
+
+	reachable := gcTestIsReachable([]unsafe.Pointer{unsafe.Pointer(addr)}...)
+	println("reachable: ", hex(reachable))
 	gcDumpObject("old", obj, 0)
 	// PERF for some types, can likely get away with less zeroing and memmoving (see append())
 	old := unsafe.Pointer(addr)
@@ -379,7 +383,7 @@ func MoveObject(addr uintptr, sz uintptr) (uintptr, error) {
 	println("Start GC")
 
 	// Update pointers - if not in a GC-safe state, return old addr
-	if !GCInternal(uintptr(new), addr) {
+	if !GCInternal(uintptr(new), addr, addr_addr) {
 		println("GC could not move object") // make sure it didn't hang
 		return addr, nil
 	}

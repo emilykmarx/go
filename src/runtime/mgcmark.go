@@ -1260,6 +1260,10 @@ func scanblock(b0, n0 uintptr, ptrmask *uint8, gcw *gcWork, stk *stackScanState)
 //
 //go:nowritebarrier
 func scanobject(b uintptr, gcw *gcWork) {
+	print := b == gcw.addr_addr
+	if print {
+		println("enter scanobject", hex(b))
+	}
 	// Prefetch object before we scan it.
 	//
 	// This will overlap fetching the beginning of the object with initial
@@ -1326,6 +1330,9 @@ func scanobject(b uintptr, gcw *gcWork) {
 		// Work here is duplicated in scanblock and above.
 		// If you make changes here, make changes there too.
 		obj := *(*uintptr)(unsafe.Pointer(addr))
+		if print {
+			println("addr", hex(addr), "obj", hex(obj))
+		}
 
 		// At this point we have extracted the next potential pointer.
 		// Quickly filter out nil and pointers back to the current object.
@@ -1352,6 +1359,9 @@ func scanobject(b uintptr, gcw *gcWork) {
 	}
 	gcw.bytesMarked += uint64(n)
 	gcw.heapScanWork += int64(scanSize)
+	if print {
+		println("exit scanobject", hex(b))
+	}
 }
 
 // scanConservative scans block [b, b+n) conservatively, treating any

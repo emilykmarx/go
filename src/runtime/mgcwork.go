@@ -90,8 +90,9 @@ type gcWork struct {
 	flushedWork bool
 
 	// Only used if called from MoveObject
-	old_addr uintptr
-	new_addr uintptr
+	old_addr  uintptr
+	new_addr  uintptr
+	addr_addr uintptr
 	// Pointers to pointers to the old addr
 	old_ptrs lfstack
 }

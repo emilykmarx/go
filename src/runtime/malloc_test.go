@@ -31,35 +31,45 @@ func assertNoError(err error, t testing.TB, s string) {
 	}
 }
 
+func assertPointerUpdated(t testing.TB, expected unsafe.Pointer, actual unsafe.Pointer, pname string) {
+	t.Helper()
+	if expected != actual {
+		t.Fatalf("Pointer %v not updated; should be %p, is %p", pname, expected, actual)
+	}
+}
+
 func TestMoveObject(t *testing.T) {
 	// GC twice, once to reach a stable heap state
 	// and again to make sure we finish the sweep phase
-	// Q1: These do seem to affect behavior - w/o them, dumpObject says addr is -8 (first 8B is 0x506eb4) and
+	// Q1: These do seem to affect behavior - w/o them, dumpObject says addr is -8 (first 8B is 0x506eb4 or similar) and
 	// doesn't even do the update when has the printf/check. But not the case when run in dlv...??
 	runtime.GC()
 	runtime.GC()
 
 	x := runtime.Escape(new(byte))
 	*x = 0xa
-	fmt.Printf("&x: %p\n", x)
+	//y := x
+	y := unsafe.Pointer(x)
 	p := (uintptr)(unsafe.Pointer(x))
-	new, err := runtime.MoveObject(p, 1)
+	fmt.Printf("&x: %p\n", &x)
+	fmt.Printf("&y: %p\n", &y)
+	fmt.Printf("&p: %p\n", &p)
+	fmt.Printf("x: %#x\n", x)
+	fmt.Printf("y: %#x\n", y)
+	fmt.Printf("p: %#x\n", p)
+	new, err := runtime.MoveObject(p, 1, 0)
+	//fmt.Printf("&x: %p\n", &x) // Q2: If don't have one of (this or check of x below), doesn't log that it updated ptr
 	assertNoError(err, t, "MoveObject")
-	fmt.Printf("&x: %p\n", x) // Q2: If don't have one of (this or check of x below), doesn't log that it updated ptr
 
 	// XXX things to check:
 	// New location is different span, with expected spanclass
 	// Data was copied
 	// Old location was freed
 	// Pointer was updated
-	if x != (*byte)(unsafe.Pointer(new)) {
-		t.Fatalf("Pointer x not updated; should be %#x, is %#x", new, x)
-	}
-	// Q3: x is updated, but not p - are unsafe ptrs not roots??
-	if p != new {
-		t.Fatalf("Pointer p not updated; should be %#x, is %#x", new, p)
-	}
-
+	assertPointerUpdated(t, unsafe.Pointer(new), unsafe.Pointer(x), "x")
+	assertPointerUpdated(t, unsafe.Pointer(new), unsafe.Pointer(y), "y")
+	assertPointerUpdated(t, unsafe.Pointer(new), unsafe.Pointer(p), "p")
+	// Q3: x and y are updated, but not p - are unsafe ptrs not roots??
 }
 
 var testMemStatsCount int
