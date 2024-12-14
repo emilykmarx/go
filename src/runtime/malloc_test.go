@@ -38,11 +38,58 @@ func assertPointerUpdated(t testing.TB, expected unsafe.Pointer, actual unsafe.P
 	}
 }
 
+// Must pass in addr, since val here is a copy
+func printPtrInfo(val unsafe.Pointer, addr unsafe.Pointer, pname string) {
+	fmt.Println()
+	fmt.Println(pname + ":")
+	fmt.Printf("val:\t%#x\n", val)
+	fmt.Printf("addr:\t%#x\n", addr)
+	// where addr points, i.e. where ptr itself is. Confirm this works
+	fmt.Println(GCTestPointerClass(addr))
+}
+
+type Struct struct {
+	x int
+	y int
+	z int
+}
+
+type Struct2 struct {
+	s Struct
+}
+
+// Keep these tests - useful to see how to make heap obj of various types
+// Originally used to confirm findObject does the right thing for elements/fields
+func TestMisc(t *testing.T) {
+	x := 1
+	y := 2
+	z := 3
+	arr := Escape([]*int{&x, &y, &z}) // avoid tiny allocator to check FindObject
+	p := (uintptr)(unsafe.Pointer(&arr[2]))
+
+	_, err := runtime.MoveObject(p, 1, 0)
+	assertNoError(err, t, "MoveObject")
+}
+
+func TestMisc2(t *testing.T) {
+	s := Struct{1, 2, 3}
+	s2 := Escape(s)
+	nested := Struct2{s2}
+	nested2 := Escape(nested)
+
+	p := (uintptr)(unsafe.Pointer(&nested2.s.y))
+	//	p := (uintptr)(unsafe.Pointer(&s2.y))
+
+	_, err := runtime.MoveObject(p, 1, 0)
+	assertNoError(err, t, "MoveObject")
+}
+
 func TestMoveObject(t *testing.T) {
 	// GC twice, once to reach a stable heap state
 	// and again to make sure we finish the sweep phase
 	// Q1: These do seem to affect behavior - w/o them, dumpObject says addr is -8 (first 8B is 0x506eb4 or similar) and
 	// doesn't even do the update when has the printf/check. But not the case when run in dlv...??
+	// Ah, this is likely the same problem with findObject() and tiny things (i.e. 1st obj in tiny block is 0x506eb4)
 	runtime.GC()
 	runtime.GC()
 
@@ -51,12 +98,10 @@ func TestMoveObject(t *testing.T) {
 	//y := x
 	y := unsafe.Pointer(x)
 	p := (uintptr)(unsafe.Pointer(x))
-	fmt.Printf("&x: %p\n", &x)
-	fmt.Printf("&y: %p\n", &y)
-	fmt.Printf("&p: %p\n", &p)
-	fmt.Printf("x: %#x\n", x)
-	fmt.Printf("y: %#x\n", y)
-	fmt.Printf("p: %#x\n", p)
+	printPtrInfo(unsafe.Pointer(x), unsafe.Pointer(&x), "x")
+	printPtrInfo(unsafe.Pointer(y), unsafe.Pointer(&y), "y")
+	printPtrInfo(unsafe.Pointer(p), unsafe.Pointer(&p), "p")
+
 	new, err := runtime.MoveObject(p, 1, 0)
 	//fmt.Printf("&x: %p\n", &x) // Q2: If don't have one of (this or check of x below), doesn't log that it updated ptr
 	assertNoError(err, t, "MoveObject")

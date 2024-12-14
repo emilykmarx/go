@@ -1239,7 +1239,8 @@ func scanblock(b0, n0 uintptr, ptrmask *uint8, gcw *gcWork, stk *stackScanState)
 
 						// If target is a moved object, record pointer's addr so can update its value later
 						if obj == gcw.old_addr {
-							println("putOldPtr from scanblock: addr of ptr", hex(b+i))
+							println("putOldPtr from scanblock: val", hex(obj), ", addr", hex(b+i), ", p", hex(p))
+							println("b", hex(b), ", i", hex(i))
 							gcw.putOldPtr(b + i)
 						}
 					} else if stk != nil && p >= stk.stack.lo && p < stk.stack.hi {
@@ -1346,12 +1347,12 @@ func scanobject(b uintptr, gcw *gcWork) {
 			// heap. In this case, we know the object was
 			// just allocated and hence will be marked by
 			// allocation itself.
-			if obj, span, objIndex := findObject(obj, b, addr-b); obj != 0 {
-				greyobject(obj, b, addr-b, span, gcw, objIndex)
+			if obj_start, span, objIndex := findObject(obj, b, addr-b); obj_start != 0 {
+				greyobject(obj_start, b, addr-b, span, gcw, objIndex)
 
 				// If target is a moved object, record pointer's addr so can update its value later
-				if obj == gcw.old_addr {
-					println("putOldPtr from scanobject: addr of ptr", hex(addr))
+				if obj_start == gcw.old_addr {
+					println("putOldPtr from scanobject: val", hex(obj_start), ", addr", hex(addr), ", p", hex(obj))
 					gcw.putOldPtr(addr)
 				}
 			}

@@ -356,9 +356,20 @@ func (e NotInHeap) Error() string {
 	return "object not in heap"
 }
 
+var alwaysFalse2 bool
+var escapeSink2 any
+
+func Escape2[T any](x T) T {
+	if alwaysFalse2 {
+		escapeSink2 = x
+	}
+	return x
+}
+
 // TODO:
 // - Handle objects with pointers (or at least assert no pointers in object - else will get scary bugs)
 // - Handle copystack during MoveObject that moves pointers we've already recorded
+// - Move the whole object (need to be careful for tiny objects)
 // - Handle or document data race for edge cases:
 // - 1. During GCInternal, thread writes a pointer to object after that pointer is scanned
 // (fix by also updating pointers added to write barrier, or abort move by checking if any added)
@@ -366,12 +377,25 @@ func (e NotInHeap) Error() string {
 // - 3. scanConservative treates scalar as pointer
 // (can't fix without significant changes to go - maybe abort move if scanConservative does any greying? Unsure if common)
 func MoveObject(addr uintptr, sz uintptr, addr_addr uintptr) (uintptr, error) {
-	print("MoveObject, addr ", hex(addr), ", sz ", sz, "\n")
+	println("MoveObject, addr ", hex(addr), ", sz ", sz, ", addr_addr ", hex(addr_addr))
+	println("&addr param: ", &addr)
 	// Check if object is on heap
 	obj, _, _ := findObject(addr, 0, 0)
 	if obj == 0 {
 		return addr, NotInHeap{}
 	}
+
+	println("obj: ", hex(obj))
+
+	// Confirming how unsafe.Pointer() and findObject work
+	/*
+		h := Escape2(new(fake))
+		h_obj, _, _ := findObject((uintptr)(unsafe.Pointer(h)), 0, 0)
+		println("h ", h, "h_obj: ", hex(h_obj))
+		println("unsafe h: ", unsafe.Pointer(h))
+		h_obj, _, _ = findObject((uintptr)(unsafe.Pointer(&h.f2)), 0, 0)
+		println("h ", &h.f2, "h_obj: ", hex(h_obj))
+	*/
 
 	reachable := gcTestIsReachable([]unsafe.Pointer{unsafe.Pointer(addr)}...)
 	println("reachable: ", hex(reachable))
