@@ -413,7 +413,7 @@ func GC() {
 // garbage collection is complete. It may also block the entire
 // program.
 // If addrs are passed, update any pointers to the moved object
-func GCInternal(new_addr uintptr, old_addr uintptr) bool {
+func GCInternal(old_block uintptr, new_block uintptr) bool {
 	// We consider a cycle to be: sweep termination, mark, mark
 	// termination, and sweep. This function shouldn't return
 	// until a full cycle has been completed, from beginning to
@@ -446,9 +446,8 @@ func GCInternal(new_addr uintptr, old_addr uintptr) bool {
 	// We're now in sweep N or later. Trigger GC cycle N+1, which
 	// will first finish sweep N if necessary and then enter sweep
 	// termination N+1.
-	trigger := gcTrigger{kind: gcTriggerCycle, n: n + 1}
-	trigger.new_addr = new_addr
-	trigger.old_addr = old_addr
+	trigger := gcTrigger{kind: gcTriggerCycle, n: n + 1,
+		old_block: old_block, new_block: new_block}
 	started := gcStart(trigger)
 
 	// Wait for mark termination N+1 to complete.
@@ -529,9 +528,9 @@ type gcTrigger struct {
 	kind gcTriggerKind
 	now  int64  // gcTriggerTime: current time
 	n    uint32 // gcTriggerCycle: cycle number to start
-	// if called from MoveObject to update pointers, the old and new addr
-	new_addr uintptr
-	old_addr uintptr
+	// If called from MoveObject to update pointers, the old and new block addr
+	old_block uintptr
+	new_block uintptr
 }
 
 type gcTriggerKind int
@@ -665,8 +664,8 @@ func gcStart(trigger gcTrigger) bool {
 			println("runtime: p", p.id, "flushGen", fg, "!= sweepgen", mheap_.sweepgen)
 			throw("p mcache not flushed")
 		}
-		p.gcw.old_addr = trigger.old_addr
-		p.gcw.new_addr = trigger.new_addr
+		p.gcw.old_block = trigger.old_block
+		p.gcw.new_block = trigger.new_block
 	}
 
 	gcBgMarkStartWorkers()
@@ -922,8 +921,8 @@ top:
 	// Mark has found all pointers to moved object. Update them before we start the world.
 	for _, p := range allp {
 		p.gcw.updateOldPtrs()
-		p.gcw.old_addr = 0
-		p.gcw.new_addr = 0
+		p.gcw.old_block = 0
+		p.gcw.new_block = 0
 		// gcw.old_ptrs will be freed with workbufs during sweep, since they share a memory pool.
 	}
 

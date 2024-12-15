@@ -1206,6 +1206,18 @@ func gcDrainN(gcw *gcWork, scanWork int64) int64 {
 	return workFlushed + gcw.heapScanWork
 }
 
+// Record a pointer into the heap found during scan, if its target is in the moved block.
+// ptr: the pointer's value.
+// block: address of block containing target.
+// addr: address of pointer.
+func maybePutOldPtr(ptr uintptr, block uintptr, addr uintptr, gcw *gcWork, f string) {
+	if block == gcw.old_block {
+		off := ptr - block
+		println("putOldPtr from ", f, ": block ", hex(block), "off: ", hex(off), ", addr of ptr", hex(addr))
+		gcw.putOldPtr(addr, off)
+	}
+}
+
 // scanblock scans b as scanobject would, but using an explicit
 // pointer bitmap instead of the heap bitmap.
 //
@@ -1232,18 +1244,13 @@ func scanblock(b0, n0 uintptr, ptrmask *uint8, gcw *gcWork, stk *stackScanState)
 		for j := 0; j < 8 && i < n; j++ {
 			if bits&1 != 0 {
 				// Same work as in scanobject; see comments there.
-				p := *(*uintptr)(unsafe.Pointer(b + i))
-				if p != 0 {
-					if obj, span, objIndex := findObject(p, b, i); obj != 0 {
-						greyobject(obj, b, i, span, gcw, objIndex)
-
-						// If target is a moved object, record pointer's addr so can update its value later
-						if obj == gcw.old_addr {
-							println("putOldPtr from scanblock: addr of ptr", hex(b+i))
-							gcw.putOldPtr(b + i)
-						}
-					} else if stk != nil && p >= stk.stack.lo && p < stk.stack.hi {
-						stk.putPtr(p, false)
+				ptr := *(*uintptr)(unsafe.Pointer(b + i))
+				if ptr != 0 {
+					if block, span, objIndex := findObject(ptr, b, i); block != 0 {
+						greyobject(block, b, i, span, gcw, objIndex)
+						maybePutOldPtr(ptr, block, b+i, gcw, "scanblock")
+					} else if stk != nil && ptr >= stk.stack.lo && ptr < stk.stack.hi {
+						stk.putPtr(ptr, false)
 					}
 				}
 			}
@@ -1325,11 +1332,11 @@ func scanobject(b uintptr, gcw *gcWork) {
 
 		// Work here is duplicated in scanblock and above.
 		// If you make changes here, make changes there too.
-		obj := *(*uintptr)(unsafe.Pointer(addr))
+		ptr := *(*uintptr)(unsafe.Pointer(addr))
 
 		// At this point we have extracted the next potential pointer.
-		// Quickly filter out nil and pointers back to the current object.
-		if obj != 0 && obj-b >= n {
+		// Quickly filter out nil.
+		if ptr != 0 {
 			// Test if obj points into the Go heap and, if so,
 			// mark the object.
 			//
@@ -1339,14 +1346,12 @@ func scanobject(b uintptr, gcw *gcWork) {
 			// heap. In this case, we know the object was
 			// just allocated and hence will be marked by
 			// allocation itself.
-			if obj, span, objIndex := findObject(obj, b, addr-b); obj != 0 {
-				greyobject(obj, b, addr-b, span, gcw, objIndex)
-
-				// If target is a moved object, record pointer's addr so can update its value later
-				if obj == gcw.old_addr {
-					println("putOldPtr from scanobject: addr of ptr", hex(addr))
-					gcw.putOldPtr(addr)
+			if block, span, objIndex := findObject(ptr, b, addr-b); block != 0 {
+				// Pointers back to the current object need not be greyed, but must be updated
+				if ptr-b >= n {
+					greyobject(block, b, addr-b, span, gcw, objIndex)
 				}
+				maybePutOldPtr(ptr, block, addr, gcw, "scanobject")
 			}
 		}
 	}
@@ -1415,11 +1420,11 @@ func scanConservative(b, n uintptr, ptrmask *uint8, gcw *gcWork, state *stackSca
 			}
 		}
 
-		val := *(*uintptr)(unsafe.Pointer(b + i))
+		ptr := *(*uintptr)(unsafe.Pointer(b + i))
 
-		// Check if val points into the stack.
-		if state != nil && state.stack.lo <= val && val < state.stack.hi {
-			// val may point to a stack object. This
+		// Check if ptr points into the stack.
+		if state != nil && state.stack.lo <= ptr && ptr < state.stack.hi {
+			// ptr may point to a stack object. This
 			// object may be dead from last cycle and
 			// hence may contain pointers to unallocated
 			// objects, but unlike heap objects we can't
@@ -1427,31 +1432,26 @@ func scanConservative(b, n uintptr, ptrmask *uint8, gcw *gcWork, state *stackSca
 			// pointers to this object are from
 			// conservative scanning, we have to scan it
 			// defensively, too.
-			state.putPtr(val, true)
+			state.putPtr(ptr, true)
 			continue
 		}
 
-		// Check if val points to a heap span.
-		span := spanOfHeap(val)
+		// Check if ptr points to a heap span.
+		span := spanOfHeap(ptr)
 		if span == nil {
 			continue
 		}
 
-		// Check if val points to an allocated object.
-		idx := span.objIndex(val)
+		// Check if ptr points to an allocated object.
+		idx := span.objIndex(ptr)
 		if span.isFree(idx) {
 			continue
 		}
 
-		// val points to an allocated object. Mark it.
-		obj := span.base() + idx*span.elemsize
-		greyobject(obj, b, i, span, gcw, idx)
-
-		// If target is a moved object, record pointer's addr so can update its value later
-		if obj == gcw.old_addr {
-			println("putOldPtr from scanConservative: addr of ptr", hex(b+i))
-			gcw.putOldPtr(b + i)
-		}
+		// ptr points to an allocated object. Mark it.
+		block := span.base() + idx*span.elemsize
+		greyobject(block, b, i, span, gcw, idx)
+		maybePutOldPtr(ptr, block, b+i, gcw, "scanConservative")
 	}
 }
 

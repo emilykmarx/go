@@ -356,37 +356,59 @@ func (e NotInHeap) Error() string {
 	return "object not in heap"
 }
 
+type HasPointers struct{}
+
+func (e HasPointers) Error() string {
+	return "old block has pointers"
+}
+
 // TODO:
-// - Handle objects with pointers (or at least assert no pointers in object - else will get scary bugs)
+// - Handle objects with pointers
 // - Handle or document data race for edge cases:
 // - 1. During GCInternal, thread writes a pointer to object after that pointer is scanned
 // (fix by also updating pointers added to write barrier, or abort move by checking if any added)
 // - 2. Thread accesses the moved object during GCInternal (fix by stopping threads if can do so safely)
 // - 3. scanConservative treates scalar as pointer
 // (can't fix without significant changes to go - maybe abort move if scanConservative does any greying? Unsure if common)
-func MoveObject(addr uintptr, sz uintptr) (uintptr, error) {
-	print("MoveObject, addr ", hex(addr), ", sz ", sz, "\n")
-	// Check if object is on heap
-	obj, _, _ := findObject(addr, 0, 0)
-	if obj == 0 {
+// PERF for some types, can likely get away with less zeroing and memmoving (see append())
+
+// Addr may point anywhere within a heap-allocated object.
+// Move entire block containing addr, thus keeping collection-type objects (e.g. structs, arrays) contiguous.
+// (For tiny blocks, this means multiple allocations may be moved.)
+// Update any pointers to the old block.
+// Return updated addr.
+func MoveObject(addr uintptr) (uintptr, error) {
+	println("MoveObject, addr ", hex(addr))
+	// Check if object is on heap or has pointers
+	old_block, span, _ := findObject(addr, 0, 0)
+	if old_block == 0 {
 		return addr, NotInHeap{}
 	}
-	gcDumpObject("old", obj, 0)
-	// PERF for some types, can likely get away with less zeroing and memmoving (see append())
-	old := unsafe.Pointer(addr)
-	new := mallocgcInternal(sz, nil, true, true)
-	memmove(new, old, sz)
+	if !span.spanclass.noscan() {
+		// Note for tiny block, we don't control what else is in block besides program's explicit allocations
+		println("old block has pointers - not yet supported")
+		return addr, HasPointers{}
+	}
+
+	off := addr - old_block // offset of addr in block
+	gcDumpObject("old", old_block, off)
+	blocksz := span.elemsize
+	println("offset ", hex(off), ", blocksz ", blocksz)
+
+	// Allocate a new tainted block of same size
+	new_block := (uintptr)(mallocgcInternal(blocksz, nil, true, true))
+	memmove(unsafe.Pointer(new_block), unsafe.Pointer(old_block), blocksz)
 	println("Start GC")
 
 	// Update pointers - if not in a GC-safe state, return old addr
-	if !GCInternal(uintptr(new), addr) {
-		println("GC could not move object") // make sure it didn't hang
+	if !GCInternal(old_block, new_block) {
+		println("GC could not move object")
 		return addr, nil
 	}
 	println("Finished GC") // make sure it didn't hang
-	obj, _, _ = findObject(uintptr(new), 0, 0)
-	gcDumpObject("new", obj, 0)
-	return uintptr(new), nil
+	gcDumpObject("new", new_block, off)
+	new_addr := new_block + off
+	return new_addr, nil
 }
 
 func mallocinit() {

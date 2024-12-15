@@ -31,35 +31,44 @@ func assertNoError(err error, t testing.TB, s string) {
 	}
 }
 
-func TestMoveObject(t *testing.T) {
-	// GC twice, once to reach a stable heap state
-	// and again to make sure we finish the sweep phase
-	// Q1: These do seem to affect behavior - w/o them, dumpObject says addr is -8 (first 8B is 0x506eb4) and
-	// doesn't even do the update when has the printf/check. But not the case when run in dlv...??
-	runtime.GC()
-	runtime.GC()
+func assertPointerUpdated(t testing.TB, expected unsafe.Pointer, actual unsafe.Pointer, pname string) {
+	t.Helper()
+	if expected != actual {
+		t.Fatalf("Pointer %v not updated; should be %p, is %p", pname, expected, actual)
+	}
+}
 
+// Must pass in addr, since val here is a copy
+func printPtrInfo(val unsafe.Pointer, addr unsafe.Pointer, pname string) {
+	fmt.Println()
+	fmt.Println(pname + ":")
+	fmt.Printf("val:\t%#x\n", val)
+	fmt.Printf("addr:\t%#x\n", addr)
+	// Where addr points, i.e. where ptr itself is
+	fmt.Println(GCTestPointerClass(addr))
+}
+
+func TestMoveObject(t *testing.T) {
+	// x and y are themselves on heap, and found by scanobject
 	x := runtime.Escape(new(byte))
 	*x = 0xa
-	fmt.Printf("&x: %p\n", x)
-	p := (uintptr)(unsafe.Pointer(x))
-	new, err := runtime.MoveObject(p, 1)
+	y := unsafe.Pointer(x)
+	p := (uintptr)(unsafe.Pointer(x)) // uintptrs are not pointers, so this won't be updated
+	printPtrInfo(unsafe.Pointer(x), unsafe.Pointer(&x), "x")
+	printPtrInfo(unsafe.Pointer(y), unsafe.Pointer(&y), "y")
+	printPtrInfo(unsafe.Pointer(p), unsafe.Pointer(&p), "p")
+
+	new, err := runtime.MoveObject(p)
 	assertNoError(err, t, "MoveObject")
-	fmt.Printf("&x: %p\n", x) // Q2: If don't have one of (this or check of x below), doesn't log that it updated ptr
 
 	// XXX things to check:
 	// New location is different span, with expected spanclass
 	// Data was copied
 	// Old location was freed
 	// Pointer was updated
-	if x != (*byte)(unsafe.Pointer(new)) {
-		t.Fatalf("Pointer x not updated; should be %#x, is %#x", new, x)
-	}
-	// Q3: x is updated, but not p - are unsafe ptrs not roots??
-	if p != new {
-		t.Fatalf("Pointer p not updated; should be %#x, is %#x", new, p)
-	}
-
+	// TODO why is new span's state mSpanDead?
+	assertPointerUpdated(t, unsafe.Pointer(new), unsafe.Pointer(x), "x")
+	assertPointerUpdated(t, unsafe.Pointer(new), unsafe.Pointer(y), "y")
 }
 
 var testMemStatsCount int

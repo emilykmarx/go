@@ -89,10 +89,15 @@ type gcWork struct {
 	// gcWork may have communicated work to another gcWork.
 	flushedWork bool
 
-	// Only used if called from MoveObject
-	old_addr uintptr
-	new_addr uintptr
-	// Pointers to pointers to the old addr
+	/* MoveObject() state, used to update pointers to moved object */
+	// Address of block containing object before and after move
+	old_block uintptr
+	new_block uintptr
+	// Stack of workbufs
+	// wbuf.obj[i]: Address of old pointer
+	// wbuf.obj[i+1]: Offset of pointer's target in old_block
+	// len(obj) is odd, so to simplify we ignore the last index
+	// (so a pointer's addr and off always share a workbuf)
 	old_ptrs lfstack
 }
 
@@ -508,35 +513,48 @@ func (w *gcWork) pushOldPtrsWorkbuf() {
 	w.old_ptrs.push(&wbuf.node)
 }
 
-// Record address of a pointer to be updated.
+// Record a pointer to be updated.
+// addr: address of pointer.
+// off: offset of target in block.
 // Not sure if nowritebarrierrec is necessary, but using it for consistency with (*gcWork) put()
 // since they are called from similar places.
 // PERF/TODO(minor): old_ptrs doesn't need to be lock-free - would be better to share code with (s *stackScanState) putPtr
 //
 //go:nowritebarrierrec
-func (w *gcWork) putOldPtr(obj uintptr) {
+func (w *gcWork) putOldPtr(addr uintptr, off uintptr) {
 	wbuf := (*workbuf)(w.old_ptrs.head())
 
 	// Record that this may acquire the wbufSpans or heap lock to
 	// allocate a workbuf.
 	lockWithRankMayAcquire(&work.wbufSpans.lock, lockRankWbufSpans)
 	lockWithRankMayAcquire(&mheap_.lock, lockRankMheap)
-	if wbuf == nil || wbuf.nobj == len(wbuf.obj) {
+	if wbuf == nil || wbuf.nobj == len(wbuf.obj)-1 { // ignore last index
 		w.pushOldPtrsWorkbuf()
 		wbuf = (*workbuf)(w.old_ptrs.head())
 	}
-	// wbuf now has space for obj
-	wbuf.obj[wbuf.nobj] = obj
+	if len(wbuf.obj)%2 == 0 {
+		throw("workbuf len is even")
+	}
+	// wbuf now has space for addr and off
+	wbuf.obj[wbuf.nobj] = addr
+	wbuf.nobj++
+	wbuf.obj[wbuf.nobj] = off
 	wbuf.nobj++
 }
 
 // Not sure if nowritebarrierrec is necessary
 func (w *gcWork) updateOldPtrs() {
 	for wbuf := (*workbuf)(w.old_ptrs.pop()); wbuf != nil; wbuf = (*workbuf)(w.old_ptrs.pop()) {
-		for i := 0; i < wbuf.nobj; i++ {
+		for i := 0; i <= wbuf.nobj-2; i += 2 { // ignore last index
 			addr := (*uintptr)(unsafe.Pointer(wbuf.obj[i])) // pointer to pointer to old object
-			println("updated ptr from", hex(*addr), "to", hex(w.new_addr))
-			*addr = w.new_addr
+			off := wbuf.obj[i+1]                            // offset of target in block
+			old_addr := w.old_block + off
+			new_addr := w.new_block + off
+			println("updating ptr from", hex(old_addr), "to", hex(new_addr), "; addr", addr, ", off", hex(off), ", *addr", hex(*addr))
+			if old_addr != *addr {
+				throw("address mismatch in old pointer")
+			}
+			*addr = new_addr
 		}
 	}
 }
