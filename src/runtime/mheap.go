@@ -583,6 +583,10 @@ func (sc spanClass) noscan() bool {
 	return sc&1 != 0
 }
 
+func (sc spanClass) tainted() bool {
+	return sc&2 != 0
+}
+
 // arenaIndex returns the index into mheap_.arenas of the arena
 // containing metadata for p. This index combines of an index into the
 // L1 map and an index into the L2 map and should be used as

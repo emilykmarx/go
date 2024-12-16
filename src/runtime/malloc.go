@@ -384,6 +384,10 @@ func MoveObject(addr uintptr) (uintptr, error) {
 	if old_block == 0 {
 		return addr, NotInHeap{}
 	}
+	if span.spanclass.tainted() {
+		println("object is already in tainted span")
+		return addr, nil
+	}
 	if !span.spanclass.noscan() {
 		// Note for tiny block, we don't control what else is in block besides program's explicit allocations
 		println("old block has pointers - not yet supported")

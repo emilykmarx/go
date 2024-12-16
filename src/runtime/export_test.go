@@ -1221,6 +1221,7 @@ func (t *SemTable) Dequeue(addr *uint32) bool {
 
 // mspan wrapper for testing.
 type MSpan mspan
+type SpanClass spanClass
 
 // Allocate an mspan for testing.
 func AllocMSpan() *MSpan {
@@ -1249,6 +1250,15 @@ func MSpanCountAlloc(ms *MSpan, bits []byte) int {
 	result := s.countAlloc()
 	s.gcmarkBits = nil
 	return result
+}
+
+func SpanClassOf(p uintptr) SpanClass {
+	return SpanClass(spanOf(p).spanclass)
+}
+
+func FindObject(p uintptr) uintptr {
+	block, _, _ := findObject(p, 0, 0)
+	return block
 }
 
 const (

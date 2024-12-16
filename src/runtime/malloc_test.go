@@ -38,6 +38,15 @@ func assertPointerUpdated(t testing.TB, expected unsafe.Pointer, actual unsafe.P
 	}
 }
 
+func assertEqual[T comparable, T2 any](t testing.TB, expected T, actual T, msg T2) {
+	t.Helper()
+	if expected != actual {
+		_, file, line, _ := runtime.Caller(1)
+		fname := filepath.Base(file)
+		t.Fatalf("failed assertion at %s:%d: expected %v != actual %v (%v)\n", fname, line, expected, actual, msg)
+	}
+}
+
 // Must pass in addr, since val here is a copy
 func printPtrInfo(val unsafe.Pointer, addr unsafe.Pointer, pname string) {
 	fmt.Println()
@@ -48,27 +57,51 @@ func printPtrInfo(val unsafe.Pointer, addr unsafe.Pointer, pname string) {
 	fmt.Println(GCTestPointerClass(addr))
 }
 
+// To compare old and new block, need to save old info in a way that won't be updated
 func TestMoveObject(t *testing.T) {
-	// x and y are themselves on heap, and found by scanobject
+	// x and y are themselves on heap, to middle of tiny block, and found by scanobject
+	// XXX assert that ^
 	x := runtime.Escape(new(byte))
 	*x = 0xa
 	y := unsafe.Pointer(x)
-	p := (uintptr)(unsafe.Pointer(x)) // uintptrs are not pointers, so this won't be updated
+	old_block := FindObject((uintptr)(y)) // uintptrs are not pointers, so this won't be updated
 	printPtrInfo(unsafe.Pointer(x), unsafe.Pointer(&x), "x")
 	printPtrInfo(unsafe.Pointer(y), unsafe.Pointer(&y), "y")
-	printPtrInfo(unsafe.Pointer(p), unsafe.Pointer(&p), "p")
+	printPtrInfo(unsafe.Pointer(old_block), unsafe.Pointer(&old_block), "old_block")
 
-	new, err := runtime.MoveObject(p)
+	new, err := runtime.MoveObject((uintptr(y)))
 	assertNoError(err, t, "MoveObject")
+	new_block := FindObject(new)
+	if old_block == new_block {
+		// verify we properly saved the old location
+		t.Fatalf("test bug: lost pointer to old location")
+	}
+	printPtrInfo(unsafe.Pointer(old_block), unsafe.Pointer(&old_block), "old_block")
+	printPtrInfo(unsafe.Pointer(new_block), unsafe.Pointer(&new_block), "new_block")
 
 	// XXX things to check:
-	// New location is different span, with expected spanclass
-	// Data was copied
-	// Old location was freed
-	// Pointer was updated
+	// Spanclass has same szclass/noscan, and is tainted
+	assertEqual(t, 11, SpanClassOf(new), "spanclass") // szclass 2, tainted, noscan
+
+	// Data of whole block was copied
+	elemsz := 16
+	for i := 0; i < elemsz; i++ {
+		assertEqual(t, *(*byte)(unsafe.Add((unsafe.Pointer)(old_block), i)),
+			*(*byte)(unsafe.Add((unsafe.Pointer)(new_block), i)), "data copy")
+	}
+
+	// Old block was freed (should be even if tiny object, since we've updated all pointers to block)
+	both := []unsafe.Pointer{unsafe.Pointer(old_block), unsafe.Pointer(new_block)}
+	expected_reachable := uint64(1)
+	actual_reachable := runtime.GCTestIsReachable(both...)
+	// Note any allocs could go to old block from this point on (since we've now done a GC with the old pointers gone)
+	assertEqual(t, expected_reachable, actual_reachable, "reachability")
+
 	// New location is marked allocd
+	// Pointers updated
 	assertPointerUpdated(t, unsafe.Pointer(new), unsafe.Pointer(x), "x")
 	assertPointerUpdated(t, unsafe.Pointer(new), unsafe.Pointer(y), "y")
+	// XXX anything else from cur test output?
 	// TODO verify and document that this breaks debug.gccheckmark
 }
 
