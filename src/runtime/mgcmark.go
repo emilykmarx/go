@@ -1475,11 +1475,6 @@ func shade(b uintptr) {
 //
 //go:nowritebarrierrec
 func greyobject(obj, base, off uintptr, span *mspan, gcw *gcWork, objIndex uintptr) {
-	greyobjectInternal(obj, base, off, span, gcw, objIndex, true)
-}
-
-//go:nowritebarrierrec
-func greyobjectInternal(obj, base, off uintptr, span *mspan, gcw *gcWork, objIndex uintptr, enqueue bool) {
 	// obj should be start of allocation, and so must be at least pointer-aligned.
 	if obj&(goarch.PtrSize-1) != 0 {
 		throw("greyobject: obj not pointer-aligned")
@@ -1520,16 +1515,14 @@ func greyobjectInternal(obj, base, off uintptr, span *mspan, gcw *gcWork, objInd
 		}
 	}
 
-	if enqueue {
-		// We're adding obj to P's local workbuf, so it's likely
-		// this object will be processed soon by the same P.
-		// Even if the workbuf gets flushed, there will likely still be
-		// some benefit on platforms with inclusive shared caches.
-		sys.Prefetch(obj)
-		// Queue the obj for scanning.
-		if !gcw.putFast(obj) {
-			gcw.put(obj)
-		}
+	// We're adding obj to P's local workbuf, so it's likely
+	// this object will be processed soon by the same P.
+	// Even if the workbuf gets flushed, there will likely still be
+	// some benefit on platforms with inclusive shared caches.
+	sys.Prefetch(obj)
+	// Queue the obj for scanning.
+	if !gcw.putFast(obj) {
+		gcw.put(obj)
 	}
 }
 

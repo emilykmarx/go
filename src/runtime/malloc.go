@@ -376,22 +376,22 @@ func (e HasPointers) Error() string {
 // Move entire block containing addr, thus keeping collection-type objects (e.g. structs, arrays) contiguous.
 // (For tiny blocks, this means multiple allocations may be moved.)
 // Update any pointers to the old block.
-// Return updated addr.
-func MoveObject(addr uintptr) (uintptr, error) {
+// Return updated addr as unsafe.Pointer, so that new stays live.
+func MoveObject(addr uintptr) (unsafe.Pointer, error) {
 	println("MoveObject, addr ", hex(addr))
 	// Check if object is on heap or has pointers
 	old_block, span, _ := findObject(addr, 0, 0)
 	if old_block == 0 {
-		return addr, NotInHeap{}
+		return unsafe.Pointer(addr), NotInHeap{}
 	}
 	if span.spanclass.tainted() {
 		println("object is already in tainted span")
-		return addr, nil
+		return unsafe.Pointer(addr), nil
 	}
 	if !span.spanclass.noscan() {
 		// Note for tiny block, we don't control what else is in block besides program's explicit allocations
 		println("old block has pointers - not yet supported")
-		return addr, HasPointers{}
+		return unsafe.Pointer(addr), HasPointers{}
 	}
 
 	off := addr - old_block // offset of addr in block
@@ -400,19 +400,18 @@ func MoveObject(addr uintptr) (uintptr, error) {
 	println("offset ", hex(off), ", blocksz ", blocksz)
 
 	// Allocate a new tainted block of same size
-	new_block := (uintptr)(mallocgcInternal(blocksz, nil, true, true))
+	new_block := mallocgcInternal(blocksz, nil, true, true)
 	memmove(unsafe.Pointer(new_block), unsafe.Pointer(old_block), blocksz)
 	println("Start GC")
 
 	// Update pointers - if not in a GC-safe state, return old addr
-	if !GCInternal(old_block, new_block) {
+	if !GCInternal(old_block, (uintptr)(new_block)) {
 		println("GC could not move object")
-		return addr, nil
+		return unsafe.Pointer(addr), nil
 	}
 	println("Finished GC") // make sure it didn't hang
-	gcDumpObject("new", new_block, off)
-	new_addr := new_block + off
-	return new_addr, nil
+	gcDumpObject("new", uintptr(new_block), off)
+	return unsafe.Add(new_block, off), nil
 }
 
 func mallocinit() {

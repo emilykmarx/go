@@ -918,19 +918,26 @@ top:
 		goto top
 	}
 
-	// Mark has found all pointers to moved object. Update them before we start the world.
-	// Also mark new block, so sweep doesn't free it (wasn't marked just now since pointers didn't exist yet)
 	gcw := &getg().m.p.ptr().gcw
-	new_block, span, objIndex := findObject(gcw.new_block, 0, 0)
-	if new_block == 0 {
-		throw("failed to find new block")
-	}
-	greyobjectInternal(new_block, 0, 0, span, gcw, objIndex, false)
-	for _, p := range allp {
-		p.gcw.updateOldPtrs()
-		p.gcw.old_block = 0
-		p.gcw.new_block = 0
-		// gcw.old_ptrs will be freed with workbufs during sweep, since they share a memory pool.
+	if gcw.new_block != 0 {
+		// For MoveObject
+		// Mark has found all pointers to moved object. Update them before we start the world.
+		// Verify that new block was marked just now.
+		new_block, span, objIndex := findObject(gcw.new_block, 0, 0)
+		if new_block == 0 {
+			throw("failed to find new block")
+		}
+
+		mbits := span.markBitsForIndex(objIndex)
+		if !mbits.isMarked() {
+			throw("new block not marked")
+		}
+		for _, p := range allp {
+			p.gcw.updateOldPtrs()
+			p.gcw.old_block = 0
+			p.gcw.new_block = 0
+			// gcw.old_ptrs will be freed with workbufs during sweep, since they share a memory pool.
+		}
 	}
 
 	gcComputeStartingStackSize()
@@ -1762,8 +1769,8 @@ func gcTestMoveStackOnNextCall() {
 	gp.stackguard0 = stackForceMove
 }
 
-// gcTestIsReachable performs a GC and returns a bit set where bit i
-// is set if ptrs[i] is reachable.
+// gcTestIsReachable performs a GC and returns a mask where index 1<<i
+// is set if ptrs[i] is reachable (i.e. ptrs and mask have opposite order!).
 func gcTestIsReachable(ptrs ...unsafe.Pointer) (mask uint64) {
 	// This takes the pointers as unsafe.Pointers in order to keep
 	// them live long enough for us to attach specials. After
