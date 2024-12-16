@@ -66,9 +66,10 @@ func TestMoveObject(t *testing.T) {
 	// Data was copied
 	// Old location was freed
 	// Pointer was updated
-	// TODO why is new span's state mSpanDead?
+	// New location is marked allocd
 	assertPointerUpdated(t, unsafe.Pointer(new), unsafe.Pointer(x), "x")
 	assertPointerUpdated(t, unsafe.Pointer(new), unsafe.Pointer(y), "y")
+	// TODO verify and document that this breaks debug.gccheckmark
 }
 
 var testMemStatsCount int

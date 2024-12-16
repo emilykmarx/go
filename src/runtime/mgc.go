@@ -919,6 +919,13 @@ top:
 	}
 
 	// Mark has found all pointers to moved object. Update them before we start the world.
+	// Also mark new block, so sweep doesn't free it (wasn't marked just now since pointers didn't exist yet)
+	gcw := &getg().m.p.ptr().gcw
+	new_block, span, objIndex := findObject(gcw.new_block, 0, 0)
+	if new_block == 0 {
+		throw("failed to find new block")
+	}
+	greyobjectInternal(new_block, 0, 0, span, gcw, objIndex, false)
 	for _, p := range allp {
 		p.gcw.updateOldPtrs()
 		p.gcw.old_block = 0
