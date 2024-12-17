@@ -58,10 +58,12 @@ func printPtrInfo(val unsafe.Pointer, addr unsafe.Pointer, pname string) {
 }
 
 // ptr1 and ptr2 are themselves on heap (will be found by scanobject), and to middle of tiny block
+// ptr3 is on stack (will be found by scanblock)
 func TestMoveObject(t *testing.T) {
 	ptr1 := runtime.Escape(new(byte))
 	*ptr1 = 0xa
 	ptr2 := unsafe.Pointer(ptr1)
+	ptr3 := ptr1
 	old_block := FindObject((uintptr)(ptr2)) // uintptrs are not pointers, so this won't be updated
 	old := (uintptr)(ptr2)
 	printPtrInfo(unsafe.Pointer(ptr1), unsafe.Pointer(&ptr1), "ptr1")
@@ -69,6 +71,7 @@ func TestMoveObject(t *testing.T) {
 	// Check we're testing the cases we think we are
 	assertEquality(true, t, GCTestPointerClass(unsafe.Pointer(&ptr1)), "heap", "ptr1 location")
 	assertEquality(true, t, GCTestPointerClass(unsafe.Pointer(&ptr2)), "heap", "ptr2 location")
+	assertEquality(true, t, GCTestPointerClass(unsafe.Pointer(&ptr3)), "stack", "ptr3 location")
 	assertEquality(false, t, ptr1, (*byte)(unsafe.Pointer(old_block)), "ptr1 offset")
 	assertEquality(false, t, ptr2, unsafe.Pointer(old_block), "ptr2 offset")
 
@@ -93,6 +96,7 @@ func TestMoveObject(t *testing.T) {
 	// Pointers updated
 	assertPointerUpdated(t, unsafe.Pointer(new), unsafe.Pointer(ptr1), "ptr1")
 	assertPointerUpdated(t, unsafe.Pointer(new), unsafe.Pointer(ptr2), "ptr2")
+	assertPointerUpdated(t, unsafe.Pointer(new), unsafe.Pointer(ptr3), "ptr3")
 
 	// Old location is unreachable*, new location is reachable
 	// *True even if tiny object, since we've updated all pointers anywhere within the block
@@ -108,6 +112,7 @@ func TestMoveObject(t *testing.T) {
 	runtime.KeepAlive(new)
 	runtime.KeepAlive(ptr1)
 	runtime.KeepAlive(ptr2)
+	runtime.KeepAlive(ptr3)
 }
 
 var testMemStatsCount int
