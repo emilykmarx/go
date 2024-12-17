@@ -1223,6 +1223,10 @@ func (t *SemTable) Dequeue(addr *uint32) bool {
 type MSpan mspan
 type SpanClass spanClass
 
+func MakeSpanClass(sizeclass uint8, noscan bool, tainted bool) SpanClass {
+	return SpanClass(makeSpanClass(sizeclass, noscan, tainted))
+}
+
 // Allocate an mspan for testing.
 func AllocMSpan() *MSpan {
 	var s *mspan

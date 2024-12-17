@@ -57,12 +57,31 @@ func printPtrInfo(val unsafe.Pointer, addr unsafe.Pointer, pname string) {
 	fmt.Println(GCTestPointerClass(addr))
 }
 
-// ptr1 and ptr2 are themselves on heap (will be found by scanobject), and to middle of tiny block
+func TestMoveObjectTiny(t *testing.T) {
+	runMoveObject(t, true)
+}
+
+func TestMoveObjectNonTiny(t *testing.T) {
+	runMoveObject(t, false)
+}
+
+// ptr1 and ptr2 are themselves on heap (will be found by scanobject)
+// ptr1 is to beginning of object (and middle of tiny block, if tiny)
+// ptr2 is to middle of object (and is passed to MoveObject)
 // ptr3 is on stack (will be found by scanblock)
-func TestMoveObject(t *testing.T) {
-	ptr1 := runtime.Escape(new(byte))
-	*ptr1 = 0xa
-	ptr2 := unsafe.Pointer(ptr1)
+func runMoveObject(t *testing.T, tiny bool) {
+	var ptr1 unsafe.Pointer
+	blocksz := 16
+	szclass := 2
+	if tiny {
+		ptr1 = (unsafe.Pointer)(runtime.Escape(new([2]byte)))
+		*(*byte)(ptr1) = 0xa
+	} else {
+		ptr1 = (unsafe.Pointer)(runtime.Escape(new([17]byte)))
+		szclass = 3
+		blocksz = 24
+	}
+	ptr2 := unsafe.Add(ptr1, 1)
 	ptr3 := ptr1
 	old_block := FindObject((uintptr)(ptr2)) // uintptrs are not pointers, so this won't be updated
 	old := (uintptr)(ptr2)
@@ -72,8 +91,9 @@ func TestMoveObject(t *testing.T) {
 	assertEquality(true, t, GCTestPointerClass(unsafe.Pointer(&ptr1)), "heap", "ptr1 location")
 	assertEquality(true, t, GCTestPointerClass(unsafe.Pointer(&ptr2)), "heap", "ptr2 location")
 	assertEquality(true, t, GCTestPointerClass(unsafe.Pointer(&ptr3)), "stack", "ptr3 location")
-	assertEquality(false, t, ptr1, (*byte)(unsafe.Pointer(old_block)), "ptr1 offset")
-	assertEquality(false, t, ptr2, unsafe.Pointer(old_block), "ptr2 offset")
+	if tiny {
+		assertEquality(false, t, ptr1, unsafe.Pointer(old_block), "ptr1 offset")
+	}
 
 	new, err := runtime.MoveObject(ptr2)
 	assertNoError(err, t, "MoveObject")
@@ -82,21 +102,21 @@ func TestMoveObject(t *testing.T) {
 	assertEquality(false, t, old_block, new_block, "test bug: lost address of old location")
 
 	// Spanclass has same szclass/noscan, and is tainted
-	assertEquality(true, t, 11, SpanClassOf((uintptr(new))), "spanclass") // szclass 2, tainted, noscan
+	assertEquality(true, t, MakeSpanClass(uint8(szclass), true, false), SpanClassOf(old), "old spanclass")
+	assertEquality(true, t, MakeSpanClass(uint8(szclass), true, true), SpanClassOf((uintptr(new))), "new spanclass")
 
 	// Data of whole block was copied
 	// (This check could maybe theoretically fail for reasons that don't indicate a bug, but in practice doesn't:
 	// 1. If GC ran between MoveObject and now, old location could be reused
 	// 2. Since this is a tiny block, any implicit allocs after the memmove could go to the new block)
-	elemsz := 16
-	for i := 0; i < elemsz; i++ {
+	for i := 0; i < int(blocksz); i++ {
 		assertEquality(true, t, *(*byte)(unsafe.Add((unsafe.Pointer)(old_block), i)),
 			*(*byte)(unsafe.Add((unsafe.Pointer)(new_block), i)), "data copy")
 	}
 	// Pointers updated
-	assertPointerUpdated(t, unsafe.Pointer(new), unsafe.Pointer(ptr1), "ptr1")
+	assertPointerUpdated(t, unsafe.Add(new, -1), unsafe.Pointer(ptr1), "ptr1") // MoveObject returns updated ptr2
 	assertPointerUpdated(t, unsafe.Pointer(new), unsafe.Pointer(ptr2), "ptr2")
-	assertPointerUpdated(t, unsafe.Pointer(new), unsafe.Pointer(ptr3), "ptr3")
+	assertPointerUpdated(t, unsafe.Add(new, -1), unsafe.Pointer(ptr3), "ptr3")
 
 	// Old location is unreachable*, new location is reachable
 	// *True even if tiny object, since we've updated all pointers anywhere within the block
