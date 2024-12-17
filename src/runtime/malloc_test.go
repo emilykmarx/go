@@ -64,15 +64,15 @@ func TestMoveObject(t *testing.T) {
 	ptr2 := unsafe.Pointer(ptr1)
 	old_block := FindObject((uintptr)(ptr2)) // uintptrs are not pointers, so this won't be updated
 	old := (uintptr)(ptr2)
-	printPtrInfo(unsafe.Pointer(ptr1), unsafe.Pointer(&ptr1), "x")
-	printPtrInfo(unsafe.Pointer(ptr2), unsafe.Pointer(&ptr2), "y")
+	printPtrInfo(unsafe.Pointer(ptr1), unsafe.Pointer(&ptr1), "ptr1")
+	printPtrInfo(unsafe.Pointer(ptr2), unsafe.Pointer(&ptr2), "ptr2")
 	// Check we're testing the cases we think we are
 	assertEquality(true, t, GCTestPointerClass(unsafe.Pointer(&ptr1)), "heap", "ptr1 location")
 	assertEquality(true, t, GCTestPointerClass(unsafe.Pointer(&ptr2)), "heap", "ptr2 location")
 	assertEquality(false, t, ptr1, (*byte)(unsafe.Pointer(old_block)), "ptr1 offset")
 	assertEquality(false, t, ptr2, unsafe.Pointer(old_block), "ptr2 offset")
 
-	new, err := runtime.MoveObject((uintptr(ptr2)))
+	new, err := runtime.MoveObject(ptr2)
 	assertNoError(err, t, "MoveObject")
 	new_block := FindObject((uintptr)(new))
 	// To compare old and new block, need to save old info in a way that won't be updated
