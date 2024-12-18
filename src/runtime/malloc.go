@@ -368,8 +368,6 @@ func (e HasPointers) Error() string {
 // - 1. During GCInternal, thread writes a pointer to object after that pointer is scanned
 // (fix by also updating pointers added to write barrier, or abort move by checking if any added)
 // - 2. Thread accesses the moved object during GCInternal (fix by stopping threads if can do so safely)
-// - 3. scanConservative treates scalar as pointer
-// (can't fix without significant changes to go - maybe abort move if scanConservative does any greying? Unsure if common)
 // PERF for some types, can likely get away with less zeroing and memmoving (see append())
 
 // Addr may point anywhere within a heap-allocated object.
@@ -397,7 +395,6 @@ func MoveObject(addr unsafe.Pointer) (unsafe.Pointer, error) {
 	off := (uintptr)(addr) - old_block // offset of addr in block
 	gcDumpObject("old", old_block, off)
 	blocksz := span.elemsize
-	println("offset ", hex(off), ", blocksz ", blocksz)
 
 	// Allocate a new tainted block of same size
 	new_block := mallocgcInternal(blocksz, nil, true, true)

@@ -545,12 +545,12 @@ func (w *gcWork) putOldPtr(addr uintptr, off uintptr) {
 // Not sure if nowritebarrierrec is necessary
 func (w *gcWork) updateOldPtrs() {
 	for wbuf := (*workbuf)(w.old_ptrs.pop()); wbuf != nil; wbuf = (*workbuf)(w.old_ptrs.pop()) {
-		for i := 0; i <= wbuf.nobj-2; i += 2 { // ignore last index
+		for i := 0; i <= wbuf.nobj-2; i += 2 {
 			addr := (*uintptr)(unsafe.Pointer(wbuf.obj[i])) // pointer to pointer to old object
 			off := wbuf.obj[i+1]                            // offset of target in block
 			old_addr := w.old_block + off
 			new_addr := w.new_block + off
-			println("updating ptr from", hex(old_addr), "to", hex(new_addr), "; addr", addr, ", off", hex(off), ", *addr", hex(*addr))
+			println("updating ptr from", hex(old_addr), "to", hex(new_addr), "; addr", addr, ", off", hex(off))
 			if old_addr != *addr {
 				throw("address mismatch in old pointer")
 			}

@@ -58,28 +58,37 @@ func printPtrInfo(val unsafe.Pointer, addr unsafe.Pointer, pname string) {
 }
 
 func TestMoveObjectTiny(t *testing.T) {
-	runMoveObject(t, true)
+	runMoveObject(t, true, false)
 }
 
 func TestMoveObjectNonTiny(t *testing.T) {
-	runMoveObject(t, false)
+	runMoveObject(t, false, false)
+}
+
+func TestMoveObjectScannable(t *testing.T) {
+	runMoveObject(t, false, true)
 }
 
 // ptr1 and ptr2 are themselves on heap (will be found by scanobject)
-// ptr1 is to beginning of object (and middle of tiny block, if tiny)
+// ptr1 is to beginning of object (and middle of tiny block, if
 // ptr2 is to middle of object (and is passed to MoveObject)
 // ptr3 is on stack (will be found by scanblock)
-func runMoveObject(t *testing.T, tiny bool) {
+func runMoveObject(t *testing.T, tiny bool, scannable bool) {
 	var ptr1 unsafe.Pointer
 	blocksz := 16
 	szclass := 2
-	if tiny {
+	if scannable {
+		ptr1 = (unsafe.Pointer)(runtime.Escape(new([2]*byte)))
+		b := byte(0xa)
+		*(**byte)(ptr1) = &b
+	} else if tiny {
 		ptr1 = (unsafe.Pointer)(runtime.Escape(new([2]byte)))
 		*(*byte)(ptr1) = 0xa
 	} else {
 		ptr1 = (unsafe.Pointer)(runtime.Escape(new([17]byte)))
 		szclass = 3
 		blocksz = 24
+		*(*byte)(ptr1) = 0xa
 	}
 	ptr2 := unsafe.Add(ptr1, 1)
 	ptr3 := ptr1
@@ -96,7 +105,16 @@ func runMoveObject(t *testing.T, tiny bool) {
 	}
 
 	new, err := runtime.MoveObject(ptr2)
-	assertNoError(err, t, "MoveObject")
+	if !scannable {
+		assertNoError(err, t, "MoveObject")
+	} else {
+		if err == nil {
+			t.Fatalf("no err; should return since scannable not supported")
+		} else if !strings.Contains(err.Error(), "has pointers") {
+			t.Fatalf("wrong err: %v", err.Error())
+		}
+		return
+	}
 	new_block := FindObject((uintptr)(new))
 	// To compare old and new block, need to save old info in a way that won't be updated
 	assertEquality(false, t, old_block, new_block, "test bug: lost address of old location")
