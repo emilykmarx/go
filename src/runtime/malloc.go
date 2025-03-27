@@ -364,6 +364,7 @@ func (e HasPointers) Error() string {
 
 // TODO:
 // - Handle objects with pointers
+// - Handle copystack during MoveObject
 // - Handle or document data race for edge cases:
 // - 1. During GCInternal, thread writes a pointer to object after that pointer is scanned
 // (fix by also updating pointers added to write barrier, or abort move by checking if any added)
