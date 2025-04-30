@@ -591,19 +591,8 @@ func gcStart(trigger gcTrigger) bool {
 	// the guts of a number of libraries that might be holding
 	// locks, don't attempt to start GC in non-preemptible or
 	// potentially unstable situations.
-	println("gcStart")
 	mp := acquirem()
 	if gp := getg(); gp == mp.g0 || mp.locks > 1 || mp.preemptoff != "" {
-		println("return early from gcStart\n")
-		if gp := getg(); gp == mp.g0 {
-			println("g0\n")
-		}
-		if mp.locks > 1 {
-			println("locks\n")
-		}
-		if mp.preemptoff != "" {
-			println("preemptoff: ", mp.preemptoff, "\n")
-		}
 
 		releasem(mp)
 		return false
@@ -630,7 +619,6 @@ func gcStart(trigger gcTrigger) bool {
 	semacquire(&work.startSema)
 	// Re-check transition condition under transition lock.
 	if !trigger.test() {
-		println("return early from gcStart; !trigger.test()")
 		semrelease(&work.startSema)
 		return false
 	}

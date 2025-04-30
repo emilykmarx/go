@@ -377,38 +377,31 @@ func (e HasPointers) Error() string {
 // Update any pointers to the old block.
 // Return updated addr as unsafe.Pointer, so that new stays live.
 func MoveObject(addr unsafe.Pointer) (unsafe.Pointer, error) {
-	println("MoveObject, addr ", addr)
+	// TODO if move fails, put reason in http response (e.g. if not GC-safe, why)
 	// Check if object is on heap or has pointers
 	old_block, span, _ := findObject((uintptr)(addr), 0, 0)
 	if old_block == 0 {
 		return addr, NotInHeap{}
 	}
 	if span.spanclass.tainted() {
-		println("object is already in tainted span")
 		return addr, nil
 	}
 	if !span.spanclass.noscan() {
 		// Note for tiny block, we don't control what else is in block besides program's explicit allocations
-		println("old block has pointers - not yet supported")
 		return addr, HasPointers{}
 	}
 
 	off := (uintptr)(addr) - old_block // offset of addr in block
-	gcDumpObject("old", old_block, off)
 	blocksz := span.elemsize
 
 	// Allocate a new tainted block of same size
 	new_block := mallocgcInternal(blocksz, nil, true, true)
 	memmove(unsafe.Pointer(new_block), unsafe.Pointer(old_block), blocksz)
-	println("Start GC")
 
 	// Update pointers - if not in a GC-safe state, return old addr
 	if !GCInternal(old_block, (uintptr)(new_block)) {
-		println("GC could not move object")
 		return addr, nil
 	}
-	println("Finished GC") // make sure it didn't hang
-	gcDumpObject("new", uintptr(new_block), off)
 	return unsafe.Add(new_block, off), nil
 }
 
