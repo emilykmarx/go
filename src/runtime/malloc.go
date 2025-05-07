@@ -379,11 +379,13 @@ func (e HasPointers) Error() string {
 func MoveObject(addr unsafe.Pointer) (unsafe.Pointer, error) {
 	// TODO if move fails, put reason in http response (e.g. if not GC-safe, why)
 	// Check if object is on heap or has pointers
+	println("MoveObject, addr ", addr)
 	old_block, span, _ := findObject((uintptr)(addr), 0, 0)
 	if old_block == 0 {
 		return addr, NotInHeap{}
 	}
 	if span.spanclass.tainted() {
+		println("Already tainted => return existing addr")
 		return addr, nil
 	}
 	if !span.spanclass.noscan() {
@@ -392,6 +394,7 @@ func MoveObject(addr unsafe.Pointer) (unsafe.Pointer, error) {
 	}
 
 	off := (uintptr)(addr) - old_block // offset of addr in block
+	gcDumpObject("old obj block", old_block, off)
 	blocksz := span.elemsize
 
 	// Allocate a new tainted block of same size
@@ -402,6 +405,7 @@ func MoveObject(addr unsafe.Pointer) (unsafe.Pointer, error) {
 	if !GCInternal(old_block, (uintptr)(new_block)) {
 		return addr, nil
 	}
+	gcDumpObject("new obj block", uintptr(new_block), off)
 	return unsafe.Add(new_block, off), nil
 }
 

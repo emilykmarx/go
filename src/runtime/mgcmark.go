@@ -1214,6 +1214,7 @@ func maybePutOldPtr(ptr uintptr, block uintptr, addr uintptr, gcw *gcWork, f str
 	if block == gcw.old_block {
 		off := ptr - block
 		println("putOldPtr from ", f, ": block ", hex(block), "off: ", hex(off), ", addr of ptr", hex(addr))
+		gcDumpObject("pointer block, before update in maybePutOldPtr", addr, 0)
 		gcw.putOldPtr(addr, off)
 	}
 }

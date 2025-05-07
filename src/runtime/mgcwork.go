@@ -554,7 +554,9 @@ func (w *gcWork) updateOldPtrs() {
 			if old_addr != *addr {
 				throw("address mismatch in old pointer")
 			}
+			gcDumpObject("pointer block, before update in updateOldPtrs", (uintptr)((unsafe.Pointer)(addr)), off)
 			*addr = new_addr
+			gcDumpObject("pointer block, after update", (uintptr)((unsafe.Pointer)(addr)), off)
 		}
 	}
 }
