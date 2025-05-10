@@ -876,9 +876,9 @@ func copystack(gp *g, newsize uintptr) {
 	if stackPoisonCopy != 0 {
 		fillstack(new, 0xfd)
 	}
-	if stackDebug >= 1 {
-		print("copystack gp=", gp, " [", hex(old.lo), " ", hex(old.hi-used), " ", hex(old.hi), "]", " -> [", hex(new.lo), " ", hex(new.hi-used), " ", hex(new.hi), "]/", newsize, "\n")
-	}
+	//if stackDebug >= 1 {
+	print("copystack gp=", gp, " [", hex(old.lo), " ", hex(old.hi-used), " ", hex(old.hi), "]", " -> [", hex(new.lo), " ", hex(new.hi-used), " ", hex(new.hi), "]/", newsize, "\n")
+	//}
 
 	// Compute adjustment.
 	var adjinfo adjustinfo
@@ -913,6 +913,7 @@ func copystack(gp *g, newsize uintptr) {
 
 	// Copy the stack (or the rest of it) to the new location
 	memmove(unsafe.Pointer(new.hi-ncopy), unsafe.Pointer(old.hi-ncopy), ncopy)
+	println("did memmove")
 
 	// Adjust remaining structures that have pointers into stacks.
 	// We have to do most of these before we traceback the new

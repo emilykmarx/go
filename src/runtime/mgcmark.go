@@ -1214,7 +1214,7 @@ func maybePutOldPtr(ptr uintptr, block uintptr, addr uintptr, gcw *gcWork, f str
 	if block == gcw.old_block {
 		off := ptr - block
 		println("putOldPtr from ", f, ": block ", hex(block), "off: ", hex(off), ", addr of ptr", hex(addr))
-		gcDumpObject("pointer block, before update in maybePutOldPtr", addr, 0)
+		//gcDumpObject("pointer block, before update in maybePutOldPtr", addr, 0)
 		gcw.putOldPtr(addr, off)
 	}
 }
@@ -1250,6 +1250,12 @@ func scanblock(b0, n0 uintptr, ptrmask *uint8, gcw *gcWork, stk *stackScanState)
 					if block, span, objIndex := findObject(ptr, b, i); block != 0 {
 						greyobject(block, b, i, span, gcw, objIndex)
 						maybePutOldPtr(ptr, block, b+i, gcw, "scanblock")
+						if block == gcw.old_block {
+							println("b: ", hex(b), " i: ", hex(i), " n: ", hex(n))
+							if stk != nil {
+								println("stk: ", hex(stk.stack.lo), ":", hex(stk.stack.hi))
+							}
+						}
 					} else if stk != nil && ptr >= stk.stack.lo && ptr < stk.stack.hi {
 						stk.putPtr(ptr, false)
 					}
