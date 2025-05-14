@@ -379,6 +379,8 @@ func (e HasPointers) Error() string {
 func MoveObject(addr unsafe.Pointer) (unsafe.Pointer, error) {
 	// TODO if move fails, put reason in http response (e.g. if not GC-safe, why) - also
 	// wrap this in a timeout, in case GC hangs
+	// TODO sync fork of go to >=1.21 (required by dlv), and check if this fixes any odd dlv behavior (e.g.proc memcache)
+
 	// Check if object is on heap or has pointers
 	old_block, span, _ := findObject((uintptr)(addr), 0, 0)
 	if old_block == 0 {
